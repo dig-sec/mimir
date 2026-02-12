@@ -167,6 +167,7 @@ main { display: flex; flex: 1; overflow: hidden; }
   margin-bottom: 3px;
 }
 .ctrl-group input[type="number"],
+.ctrl-group input[type="datetime-local"],
 .ctrl-group select {
   width: 100%;
   padding: 7px 8px;
@@ -174,6 +175,12 @@ main { display: flex; flex: 1; overflow: hidden; }
   border-radius: 6px;
   font-size: 13px;
   background: white;
+}
+.ctrl-group input[type="datetime-local"] {
+  padding: 5px 6px;
+  font-size: 12px;
+  font-family: monospace;
+  letter-spacing: -0.02em;
 }
 .ctrl-group input[type="range"] {
   width: 100%;

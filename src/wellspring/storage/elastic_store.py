@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
 from uuid import uuid4
 
-from elasticsearch import ConflictError, Elasticsearch, NotFoundError
+from elasticsearch import ApiError, ConflictError, Elasticsearch, NotFoundError
 
 from ..normalize import canonical_entity_key
 from ..schemas import (
@@ -108,10 +108,16 @@ class _ElasticBase:
     def _ensure_index(self, name: str, properties: Dict[str, Any]) -> None:
         if self.client.indices.exists(index=name):
             return
-        self.client.indices.create(
-            index=name,
-            mappings={"properties": properties},
-        )
+        try:
+            self.client.indices.create(
+                index=name,
+                mappings={"properties": properties},
+            )
+        except ApiError as exc:
+            err = getattr(exc, "error", None)
+            if err == "resource_already_exists_exception" or "resource_already_exists_exception" in str(exc):
+                return
+            raise
 
     def _iter_search_hits(
         self,
@@ -120,12 +126,30 @@ class _ElasticBase:
         sort: List[Dict[str, Any]],
         size: int = 500,
     ) -> Iterator[Dict[str, Any]]:
+        normalized_sort: List[Dict[str, Any]] = []
+        has_shard_doc = False
+        for sort_item in sort:
+            if not isinstance(sort_item, dict) or not sort_item:
+                continue
+            field, spec = next(iter(sort_item.items()))
+            if field == "_id":
+                field = "_shard_doc"
+                spec = "asc"
+            if field == "_shard_doc":
+                has_shard_doc = True
+            normalized_sort.append({field: spec})
+        if not normalized_sort:
+            normalized_sort = [{"_shard_doc": "asc"}]
+            has_shard_doc = True
+        if not has_shard_doc:
+            normalized_sort.append({"_shard_doc": "asc"})
+
         search_after: Optional[List[Any]] = None
         while True:
             params: Dict[str, Any] = {
                 "index": index,
                 "query": query,
-                "sort": sort,
+                "sort": normalized_sort,
                 "size": size,
             }
             if search_after:
@@ -487,6 +511,54 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
             entities.append(self._to_entity(doc["_id"], doc["_source"]))
         return entities
 
+    def get_relation_provenance_timestamps(
+        self,
+        relation_ids: Iterable[str],
+        source_uri: Optional[str] = None,
+        since: Optional[datetime] = None,
+        until: Optional[datetime] = None,
+    ) -> Dict[str, List[datetime]]:
+        relation_id_list = list(dict.fromkeys(str(relation_id) for relation_id in relation_ids if relation_id))
+        if not relation_id_list:
+            return {}
+
+        since_value = _normalize_datetime(since)
+        until_value = _normalize_datetime(until)
+        timestamps_by_relation: Dict[str, List[datetime]] = {}
+
+        chunk_size = 500
+        for i in range(0, len(relation_id_list), chunk_size):
+            id_chunk = relation_id_list[i : i + chunk_size]
+            filters: List[Dict[str, Any]] = [{"terms": {"relation_id": id_chunk}}]
+            if source_uri:
+                filters.append({"term": {"source_uri": source_uri}})
+            if since_value or until_value:
+                range_filter: Dict[str, Any] = {}
+                if since_value:
+                    range_filter["gte"] = since_value
+                if until_value:
+                    range_filter["lte"] = until_value
+                filters.append({"range": {"timestamp": range_filter}})
+
+            for hit in self._iter_search_hits(
+                self.indices.relation_provenance,
+                query={"bool": {"filter": filters}},
+                sort=[{"timestamp": "asc"}, {"_id": "asc"}],
+                size=1000,
+            ):
+                source = hit.get("_source") or {}
+                relation_id = str(source.get("relation_id", ""))
+                if not relation_id:
+                    continue
+                timestamp_raw = source.get("timestamp")
+                if not timestamp_raw:
+                    continue
+                timestamps_by_relation.setdefault(relation_id, []).append(
+                    _parse_datetime(timestamp_raw)
+                )
+
+        return timestamps_by_relation
+
     def _fetch_relations(
         self,
         entity_ids: Iterable[str],
@@ -521,31 +593,13 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
             return relations
 
         relation_ids = [relation.id for relation in relations]
-        allowed_ids: set[str] = set()
-        since_value = _normalize_datetime(since)
-        until_value = _normalize_datetime(until)
-        for i in range(0, len(relation_ids), 500):
-            id_chunk = relation_ids[i : i + 500]
-            filters: List[Dict[str, Any]] = [{"terms": {"relation_id": id_chunk}}]
-            if source_uri:
-                filters.append({"term": {"source_uri": source_uri}})
-            if since_value or until_value:
-                range_filter: Dict[str, Any] = {}
-                if since_value:
-                    range_filter["gte"] = since_value
-                if until_value:
-                    range_filter["lte"] = until_value
-                filters.append({"range": {"timestamp": range_filter}})
-            allowed_hits = self.client.search(
-                index=self.indices.relation_provenance,
-                query={
-                    "bool": {
-                        "filter": filters
-                    }
-                },
-                size=max(len(id_chunk), 1),
-            ).get("hits", {}).get("hits", [])
-            allowed_ids.update(hit["_source"]["relation_id"] for hit in allowed_hits)
+        allowed_timestamps = self.get_relation_provenance_timestamps(
+            relation_ids,
+            source_uri=source_uri,
+            since=since,
+            until=until,
+        )
+        allowed_ids = set(allowed_timestamps.keys())
         return [relation for relation in relations if relation.id in allowed_ids]
 
     def get_subgraph(
@@ -670,6 +724,113 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
     def count_relations(self) -> int:
         return int(self.client.count(index=self.indices.relations, query={"match_all": {}})["count"])
 
+    def get_data_quality_summary(
+        self,
+        days: int = 30,
+        source_uri: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        days = max(int(days), 1)
+        now = datetime.utcnow()
+        since = now - timedelta(days=days)
+
+        scope_filters: List[Dict[str, Any]] = []
+        if source_uri:
+            scope_filters.append({"term": {"source_uri": source_uri}})
+
+        window_filters = list(scope_filters)
+        window_filters.append({"range": {"timestamp": {"gte": since.isoformat()}}})
+        window_query: Dict[str, Any] = {"bool": {"filter": window_filters}}
+
+        all_time_query: Dict[str, Any]
+        if scope_filters:
+            all_time_query = {"bool": {"filter": scope_filters}}
+        else:
+            all_time_query = {"match_all": {}}
+
+        window_aggs = self.client.search(
+            index=self.indices.relation_provenance,
+            query=window_query,
+            size=0,
+            aggs={
+                "active_relations": {
+                    "cardinality": {
+                        "field": "relation_id",
+                        "precision_threshold": 40000,
+                    }
+                },
+                "sources": {"cardinality": {"field": "source_uri"}},
+                "latest_event": {"max": {"field": "timestamp"}},
+                "earliest_event": {"min": {"field": "timestamp"}},
+            },
+        ).get("aggregations", {})
+
+        all_time_aggs = self.client.search(
+            index=self.indices.relation_provenance,
+            query=all_time_query,
+            size=0,
+            aggs={
+                "relations_with_evidence": {
+                    "cardinality": {
+                        "field": "relation_id",
+                        "precision_threshold": 40000,
+                    }
+                }
+            },
+        ).get("aggregations", {})
+
+        evidence_docs_window = int(
+            self.client.count(
+                index=self.indices.relation_provenance,
+                query=window_query,
+            )["count"]
+        )
+        missing_timestamp_query: Dict[str, Any] = {"bool": {"must_not": [{"exists": {"field": "timestamp"}}]}}
+        if scope_filters:
+            missing_timestamp_query = {
+                "bool": {
+                    "filter": scope_filters,
+                    "must_not": [{"exists": {"field": "timestamp"}}],
+                }
+            }
+        missing_timestamp_docs = int(
+            self.client.count(
+                index=self.indices.relation_provenance,
+                query=missing_timestamp_query,
+            )["count"]
+        )
+
+        relations_total = int(self.client.count(index=self.indices.relations, query={"match_all": {}})["count"])
+        relations_with_evidence_all_time = int(
+            all_time_aggs.get("relations_with_evidence", {}).get("value") or 0
+        )
+        active_relations_window = int(window_aggs.get("active_relations", {}).get("value") or 0)
+        sources_in_window = int(window_aggs.get("sources", {}).get("value") or 0)
+
+        orphan_relations = None
+        evidence_coverage = None
+        if not source_uri:
+            orphan_relations = max(relations_total - relations_with_evidence_all_time, 0)
+            if relations_total > 0:
+                evidence_coverage = relations_with_evidence_all_time / relations_total
+
+        return {
+            "source_uri": source_uri,
+            "window_days": days,
+            "window_since": since.isoformat(),
+            "generated_at": now.isoformat(),
+            "entities_total": int(self.client.count(index=self.indices.entities, query={"match_all": {}})["count"]),
+            "relations_total": relations_total,
+            "relations_with_evidence_all_time": relations_with_evidence_all_time,
+            "active_relations_window": active_relations_window,
+            "evidence_docs_window": evidence_docs_window,
+            "sources_in_window": sources_in_window,
+            "latest_event_at": window_aggs.get("latest_event", {}).get("value_as_string"),
+            "earliest_event_at": window_aggs.get("earliest_event", {}).get("value_as_string"),
+            "missing_timestamp_docs": missing_timestamp_docs,
+            "orphan_relations": orphan_relations,
+            "evidence_coverage": evidence_coverage,
+        }
+
 
 class ElasticRunStore(_ElasticBase, RunStore):
     def __init__(
@@ -793,7 +954,6 @@ class ElasticRunStore(_ElasticBase, RunStore):
             sort=[
                 {"document_length": {"order": "asc", "missing": "_last"}},
                 {"started_at": "asc"},
-                {"_id": "asc"},
             ],
             size=25,
             seq_no_primary_term=True,
@@ -868,7 +1028,7 @@ class ElasticRunStore(_ElasticBase, RunStore):
         response = self.client.search(
             index=self.indices.runs,
             query={"match_all": {}},
-            sort=[{"started_at": "desc"}, {"_id": "asc"}],
+            sort=[{"started_at": "desc"}],
             size=limit,
         )
         hits = response.get("hits", {}).get("hits", [])
@@ -1184,7 +1344,7 @@ class ElasticMetricsStore(_ElasticBase, MetricsStore):
             index=self.indices.metrics,
             query={"bool": {"filter": filters}},
             size=1,
-            sort=[{"bucket_start": "desc"}, {"evidence_count": "desc"}, {"_id": "asc"}],
+            sort=[{"bucket_start": "desc"}, {"evidence_count": "desc"}, {"entity_name": "asc"}],
             aggs={
                 "active_actors": {"cardinality": {"field": "entity_id"}},
                 "evidence_total": {"sum": {"field": "evidence_count"}},

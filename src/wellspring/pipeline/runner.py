@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Any, Optional
 from uuid import uuid4
 
 from ..chunking import chunk_text
@@ -24,6 +24,67 @@ def _snippet(text: str, limit: int = 400) -> str:
     if len(text) <= limit:
         return text
     return text[:limit].rstrip() + "..."
+
+
+def _to_utc_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _parse_epoch_timestamp(value: float) -> Optional[datetime]:
+    epoch = float(value)
+    if abs(epoch) >= 10_000_000_000:
+        epoch /= 1000.0
+    elif abs(epoch) < 1_000_000_000:
+        return None
+    try:
+        return datetime.fromtimestamp(epoch, tz=timezone.utc)
+    except (ValueError, OSError, OverflowError):
+        return None
+
+
+def _parse_datetime_value(value: Any) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        return _to_utc_datetime(value)
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return _parse_epoch_timestamp(float(value))
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.replace(".", "", 1).lstrip("+-").isdigit():
+        try:
+            numeric = float(text)
+        except ValueError:
+            numeric = None
+        if numeric is not None:
+            parsed_epoch = _parse_epoch_timestamp(numeric)
+            if parsed_epoch:
+                return parsed_epoch
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        return _to_utc_datetime(datetime.fromisoformat(text))
+    except ValueError:
+        return None
+
+
+def _resolve_provenance_timestamp(metadata: Optional[dict[str, Any]]) -> datetime:
+    if isinstance(metadata, dict):
+        for key in (
+            "timestamp_value",
+            "published",
+            "published_at",
+            "created_at",
+            "updated_at",
+            "timestamp",
+        ):
+            parsed = _parse_datetime_value(metadata.get(key))
+            if parsed:
+                return parsed
+    return datetime.now(timezone.utc)
 
 
 def _infer_is_a_relations(relations: list[Relation]) -> list[Relation]:
@@ -105,6 +166,8 @@ async def process_run(
 
     source_uri = doc["source_uri"]
     text = doc["text"]
+    metadata = doc.get("metadata") if isinstance(doc, dict) else None
+    provenance_timestamp = _resolve_provenance_timestamp(metadata)
 
     chunks = chunk_text(
         text,
@@ -163,7 +226,7 @@ async def process_run(
                     extraction_run_id=run_id,
                     model=settings.ollama_model,
                     prompt_version=settings.prompt_version,
-                    timestamp=datetime.utcnow(),
+                    timestamp=provenance_timestamp,
                 )
                 graph_store.attach_provenance(stored_relation.id, provenance)
             if settings.enable_inference and extracted_relations:
@@ -181,7 +244,7 @@ async def process_run(
                             extraction_run_id=run_id,
                             model=settings.ollama_model,
                             prompt_version=settings.prompt_version,
-                            timestamp=datetime.utcnow(),
+                            timestamp=provenance_timestamp,
                         )
                         graph_store.attach_provenance(stored_relation.id, provenance)
             if settings.enable_cooccurrence and chunk_entities:
@@ -201,7 +264,7 @@ async def process_run(
                             extraction_run_id=run_id,
                             model=settings.ollama_model,
                             prompt_version=settings.prompt_version,
-                            timestamp=datetime.utcnow(),
+                            timestamp=provenance_timestamp,
                         )
                         graph_store.attach_provenance(stored_relation.id, provenance)
     finally:

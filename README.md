@@ -40,6 +40,28 @@ Environment variables:
 - `ELASTICSEARCH_PASSWORD` (default: empty)
 - `ELASTICSEARCH_INDEX_PREFIX` (default: `wellspring`)
 - `ELASTICSEARCH_VERIFY_CERTS` (default: `1`)
+- `ELASTIC_CONNECTOR_HOSTS` (default: `ELASTICSEARCH_HOST`)
+- `ELASTIC_CONNECTOR_USER` (default: `ELASTICSEARCH_USER`)
+- `ELASTIC_CONNECTOR_PASSWORD` (default: `ELASTICSEARCH_PASSWORD`)
+- `ELASTIC_CONNECTOR_VERIFY_CERTS` (default: `ELASTICSEARCH_VERIFY_CERTS`)
+- `ELASTIC_CONNECTOR_ENABLED` (default: `ELASTICSEARCH_ENABLED`, then `true`)
+- `ELASTIC_CONNECTOR_TIMEOUT` (default: `ELASTICSEARCH_TIMEOUT`, then `60`)
+- `ELASTIC_CONNECTOR_INDICES` (default: `feedly_news`, comma-separated)
+- `ELASTIC_CONNECTOR_PAGE_SIZE` (default: `200`)
+- `ELASTIC_CONNECTOR_LOOKBACK_MINUTES` (default: `180`)
+- `ELASTIC_CONNECTOR_MIN_TEXT_CHARS` (default: `50`)
+- `ELASTIC_CONNECTOR_STRIP_HTML` (default: `1`)
+- `ELASTIC_CONNECTOR_NORMALIZE_WHITESPACE` (default: `1`)
+- `ELASTIC_CONNECTOR_TITLE_FIELDS` (default: `title,headline,name`)
+- `ELASTIC_CONNECTOR_TEXT_FIELDS` (default: `content,text,summary,description,body,full_text`)
+- `ELASTIC_CONNECTOR_URL_FIELDS` (default: `url,link,origin_url`)
+- `ELASTIC_CONNECTOR_TIMESTAMP_FIELDS` (default: `@timestamp,published,published_at,updated_at,created_at,timestamp`)
+- `ELASTICSEARCH_URL` (alias for connector host)
+- `ELASTICSEARCH_INDEX` (alias for connector indices)
+- `ELASTICSEARCH_USERNAME` (alias for connector user)
+- `ELASTICSEARCH_VERIFY_TLS` (alias for connector TLS verification)
+- `ELASTICSEARCH_TIMEOUT` (alias for connector timeout)
+- `ELASTICSEARCH_BATCH_SIZE` (alias for connector page size)
 - `CHUNK_SIZE` (default: `1200`)
 - `CHUNK_OVERLAP` (default: `200`)
 - `PROMPT_VERSION` (default: `v1`)
@@ -51,6 +73,7 @@ Environment variables:
 - `METRICS_ROLLUP_INTERVAL_SECONDS` (default: `900`)
 - `METRICS_ROLLUP_LOOKBACK_DAYS` (default: `365`)
 - `METRICS_ROLLUP_MIN_CONFIDENCE` (default: `0.0`)
+- `METRICS_ROLLUP_STALE_SECONDS` (default: `0` = auto threshold)
 
 Inference (when enabled) currently applies a simple transitive rule for `is_a` relations within a chunk.
 
@@ -60,6 +83,28 @@ Inference (when enabled) currently applies a simple transitive rule for `is_a` r
 export ELASTICSEARCH_HOST=http://192.168.2.50:9200
 export ELASTICSEARCH_USER=elastic
 export ELASTICSEARCH_PASSWORD='your-password'
+```
+
+### Elasticsearch source connector
+
+Pull docs from external/source Elasticsearch indices into Wellspring's run queue:
+
+```bash
+curl -X POST "http://localhost:8000/api/elasticsearch/pull"
+```
+
+This manual pull endpoint works even if `ELASTICSEARCH_ENABLED=false` in `.env`.
+
+By default this pulls the configured `ELASTIC_CONNECTOR_INDICES` list (initially
+`feedly_news`) and queues new/updated docs for LLM extraction.
+
+Before queueing, the connector aligns source records into canonical `title/text/url`
+fields and applies optional text normalization (HTML stripping + whitespace cleanup).
+
+To override indices and window per run:
+
+```bash
+curl -X POST "http://localhost:8000/api/elasticsearch/pull?indices=feedly_news&max_per_index=1000&lookback_minutes=120"
 ```
 
 ## Temporal Analysis
@@ -99,6 +144,19 @@ You can also trigger a manual rollup:
 
 ```bash
 curl -X POST "http://localhost:8000/api/metrics/rollup?lookback_days=365&min_confidence=0.2"
+```
+
+Optionally scope rollups and stats to a source URI:
+
+```bash
+curl -X POST "http://localhost:8000/api/metrics/rollup?source_uri=elasticsearch://feedly_news/doc-123"
+curl "http://localhost:8000/api/stats?source_uri=elasticsearch://feedly_news/doc-123"
+```
+
+Data quality summary (coverage, orphan relations, missing timestamps):
+
+```bash
+curl "http://localhost:8000/api/data-quality?days=30"
 ```
 
 In the web UI, use the `Since`, `Until`, and `Timeline interval` controls in Explore, then click `Visualize` to render both the filtered graph and timeline panel.

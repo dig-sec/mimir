@@ -3,22 +3,9 @@ services:
     build: .
     restart: unless-stopped
     network_mode: host
+    env_file: .env
     environment:
       - OLLAMA_BASE_URL=http://127.0.0.1:11434
-      - OLLAMA_MODEL=phi4
-      - ELASTICSEARCH_HOST=${ELASTICSEARCH_HOST:-http://192.168.2.50:9200}
-      - ELASTICSEARCH_USER=${ELASTICSEARCH_USER:-elastic}
-      - ELASTICSEARCH_PASSWORD=${ELASTICSEARCH_PASSWORD:-}
-      - ELASTICSEARCH_INDEX_PREFIX=${ELASTICSEARCH_INDEX_PREFIX:-wellspring}
-      - ELASTICSEARCH_VERIFY_CERTS=${ELASTICSEARCH_VERIFY_CERTS:-1}
-      - METRICS_ROLLUP_ENABLED=${METRICS_ROLLUP_ENABLED:-1}
-      - METRICS_ROLLUP_INTERVAL_SECONDS=${METRICS_ROLLUP_INTERVAL_SECONDS:-900}
-      - METRICS_ROLLUP_LOOKBACK_DAYS=${METRICS_ROLLUP_LOOKBACK_DAYS:-365}
-      - METRICS_ROLLUP_MIN_CONFIDENCE=${METRICS_ROLLUP_MIN_CONFIDENCE:-0.0}
-      - LOG_LEVEL=INFO
-      - OPENCTI_URL=https://opencti.dig-sec.com
-      - OPENCTI_TOKEN=671267dd-c6b2-404d-9f9d-f569131feed1
-      - WATCHED_FOLDERS=/data/documents
     volumes:
       - /mnt/nvme0n1p1/wellspring:/data
       - /mnt/storage2:/data/documents:ro
@@ -27,19 +14,9 @@ services:
     build: .
     restart: unless-stopped
     command: ["python", "-m", "wellspring.worker.main"]
+    env_file: .env
     environment:
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
-      - OLLAMA_MODEL=phi4
-      - ELASTICSEARCH_HOST=${ELASTICSEARCH_HOST:-http://192.168.2.50:9200}
-      - ELASTICSEARCH_USER=${ELASTICSEARCH_USER:-elastic}
-      - ELASTICSEARCH_PASSWORD=${ELASTICSEARCH_PASSWORD:-}
-      - ELASTICSEARCH_INDEX_PREFIX=${ELASTICSEARCH_INDEX_PREFIX:-wellspring}
-      - ELASTICSEARCH_VERIFY_CERTS=${ELASTICSEARCH_VERIFY_CERTS:-1}
-      - METRICS_ROLLUP_ENABLED=${METRICS_ROLLUP_ENABLED:-1}
-      - METRICS_ROLLUP_INTERVAL_SECONDS=${METRICS_ROLLUP_INTERVAL_SECONDS:-900}
-      - METRICS_ROLLUP_LOOKBACK_DAYS=${METRICS_ROLLUP_LOOKBACK_DAYS:-365}
-      - METRICS_ROLLUP_MIN_CONFIDENCE=${METRICS_ROLLUP_MIN_CONFIDENCE:-0.0}
-      - LOG_LEVEL=INFO
     volumes:
       - /mnt/nvme0n1p1/wellspring:/data
     extra_hosts:

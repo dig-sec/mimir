@@ -2,6 +2,10 @@ import { toast } from './helpers.js';
 
 export function initOpenCTI() {
   document.getElementById('scanFilesBtn').addEventListener('click', scanFiles);
+  document.getElementById('elasticPullBtn').addEventListener('click', pullElasticsearchDocs);
+  document.getElementById('feedlyPullBtn').addEventListener('click', pullFeedly);
+  document.getElementById('openctiPullBtn').addEventListener('click', pullOpenCTI);
+  document.getElementById('pullAllBtn').addEventListener('click', pullAllSources);
 
   // Load watched folder names into button label
   loadWatchedFolders();
@@ -38,7 +42,12 @@ async function refreshStats() {
     // Header stats bar (compact)
     const bar = document.getElementById('statsBar');
     const activeActors = s.metrics?.active_actors || 0;
-    const metricsFresh = s.metrics?.last_rollup_at ? 'metrics fresh' : 'metrics pending';
+    const metricsStatus = s.metrics_status || {};
+    let metricsFresh = 'metrics pending';
+    if (metricsStatus.error) metricsFresh = 'metrics error';
+    else if (!metricsStatus.last_rollup_at) metricsFresh = 'metrics pending';
+    else if (metricsStatus.is_stale) metricsFresh = 'metrics stale';
+    else metricsFresh = 'metrics fresh';
     bar.textContent =
       `${s.entities.toLocaleString()} entities · ${s.relations.toLocaleString()} rels` +
       ` · ${activeActors.toLocaleString()} active actors (30d)` +
@@ -104,6 +113,106 @@ async function scanFiles() {
   } finally {
     btn.disabled = false;
     btn.innerHTML = `&#x1F4C1; Scan ${watchedFolderLabel}`;
+  }
+}
+
+async function pullElasticsearchDocs() {
+  const btn = document.getElementById('elasticPullBtn');
+  btn.disabled = true;
+  btn.textContent = 'Pulling...';
+
+  try {
+    const res = await fetch('/api/elasticsearch/pull', { method: 'POST' });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Elasticsearch pull failed');
+    }
+
+    const data = await res.json();
+    toast(`Elasticsearch pull started (task ${data.task_id})`, 'success');
+    pollTask(data.task_id);
+
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '&#x1F50D; ES Docs';
+  }
+}
+
+async function pullFeedly() {
+  const btn = document.getElementById('feedlyPullBtn');
+  btn.disabled = true;
+  btn.textContent = 'Pulling...';
+
+  try {
+    const res = await fetch('/api/feedly/pull', { method: 'POST' });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Feedly pull failed');
+    }
+
+    const data = await res.json();
+    toast(`Feedly pull started (task ${data.task_id})`, 'success');
+    pollTask(data.task_id);
+
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '&#x1F4E1; Feedly CTI';
+  }
+}
+
+async function pullOpenCTI() {
+  const btn = document.getElementById('openctiPullBtn');
+  btn.disabled = true;
+  btn.textContent = 'Pulling...';
+
+  try {
+    const res = await fetch('/api/opencti/pull', { method: 'POST' });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'OpenCTI pull failed');
+    }
+
+    const data = await res.json();
+    toast(`OpenCTI pull started (task ${data.task_id})`, 'success');
+    pollTask(data.task_id);
+
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '&#x1F310; OpenCTI';
+  }
+}
+
+async function pullAllSources() {
+  const btn = document.getElementById('pullAllBtn');
+  btn.disabled = true;
+  btn.textContent = 'Pulling all sources...';
+
+  try {
+    const res = await fetch('/api/sources/pull-all', { method: 'POST' });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || 'Pull-all failed');
+    }
+
+    const data = await res.json();
+    toast(`Pull-all started (task ${data.task_id})`, 'success');
+    pollTask(data.task_id);
+
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '&#x1F504; Pull All Sources';
   }
 }
 

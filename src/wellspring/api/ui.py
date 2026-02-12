@@ -122,9 +122,25 @@ def render_root_ui() -> str:
             <button class="btn btn-primary" id="uploadBtn" style="flex:1">Upload &amp; Process</button>
             <button class="btn btn-outline" id="clearFilesBtn">Clear</button>
           </div>
-          <div class="btn-row" style="margin-top:6px">
+          <div class="btn-row" style="margin-top:8px">
+            <button class="btn btn-primary" id="pullAllBtn" style="flex:1;font-size:12px">
+              &#x1F504; Pull All Sources
+            </button>
+          </div>
+          <div class="btn-row" style="margin-top:4px">
+            <button class="btn btn-outline" id="feedlyPullBtn" style="flex:1;font-size:12px">
+              &#x1F4E1; Feedly CTI
+            </button>
+            <button class="btn btn-outline" id="openctiPullBtn" style="flex:1;font-size:12px">
+              &#x1F310; OpenCTI
+            </button>
+          </div>
+          <div class="btn-row" style="margin-top:4px">
             <button class="btn btn-outline" id="scanFilesBtn" style="flex:1;font-size:12px">
-              &#x1F4C1; Scan Watched Folders
+              &#x1F4C1; Scan Folders
+            </button>
+            <button class="btn btn-outline" id="elasticPullBtn" style="flex:1;font-size:12px">
+              &#x1F50D; ES Docs
             </button>
           </div>
         </div>
