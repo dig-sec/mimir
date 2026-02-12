@@ -18,12 +18,13 @@ Design goals
 from __future__ import annotations
 
 import html
+import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterator, List, Optional
-from uuid import uuid4
+from uuid import UUID, uuid4, uuid5
 
 from elasticsearch import Elasticsearch
 
@@ -34,6 +35,28 @@ from ..storage.base import GraphStore
 from ..storage.run_store import RunStore
 
 logger = logging.getLogger(__name__)
+
+# Namespace UUID for deterministic provenance IDs
+_NS_PROVENANCE = UUID("c3d4e5f6-a7b8-9012-cdef-123456789012")
+
+
+def _det_prov_id(
+    *,
+    source_uri: str,
+    relation_id: str,
+    model: str,
+    chunk_id: str,
+    start_offset: int,
+    end_offset: int,
+    snippet: str,
+) -> str:
+    """Deterministic provenance ID keyed by evidence granularity."""
+    snippet_hash = hashlib.sha1(snippet.encode("utf-8")).hexdigest()
+    material = (
+        f"{source_uri}|{relation_id}|{model}|{chunk_id}|"
+        f"{start_offset}|{end_offset}|{snippet_hash}"
+    )
+    return str(uuid5(_NS_PROVENANCE, material))
 
 # ── Feedly entity-type → Wellspring entity-type ──────────────
 _FEEDLY_TYPE_MAP: Dict[str, str] = {
@@ -116,6 +139,7 @@ def sync_feedly_index(
     *,
     index_name: str = "feedly_news",
     since: Optional[datetime] = None,
+    until: Optional[datetime] = None,
     max_articles: int = 0,
     queue_for_llm: bool = False,
     progress_cb: Optional[Any] = None,
@@ -162,28 +186,38 @@ def sync_feedly_index(
 
     _progress(f"Scanning {index_name} since {since.isoformat()}...")
 
+    # Use bulk_mode if available (ElasticGraphStore) to avoid per-write
+    # refresh=wait_for — improves throughput ~30-60x for batch imports.
+    import contextlib
+    bulk_ctx = (
+        graph_store.bulk_mode()
+        if hasattr(graph_store, "bulk_mode")
+        else contextlib.nullcontext()
+    )
+
     try:
-        for i, doc in enumerate(_iter_feedly_docs(client, index_name, since, settings)):
-            if max_articles and i >= max_articles:
-                break
+        with bulk_ctx:
+            for i, doc in enumerate(_iter_feedly_docs(client, index_name, since, settings, until=until)):
+                if max_articles and i >= max_articles:
+                    break
 
-            try:
-                _process_article(
-                    doc, graph_store, resolver, run_store, settings,
-                    sync_run_id, result, queue_for_llm,
-                )
-            except Exception as exc:
-                title = doc.get("entry", {}).get("title", "?")[:60]
-                result.errors.append(f"{title}: {exc}")
-                logger.warning("Failed to process article: %s", exc)
+                try:
+                    _process_article(
+                        doc, graph_store, resolver, run_store, settings,
+                        sync_run_id, result, queue_for_llm,
+                    )
+                except Exception as exc:
+                    title = doc.get("entry", {}).get("title", "?")[:60]
+                    result.errors.append(f"{title}: {exc}")
+                    logger.warning("Failed to process article: %s", exc)
 
-            if (i + 1) % 50 == 0:
-                _progress(
-                    f"Processed {i+1} articles: "
-                    f"{result.entities_created} entities, "
-                    f"{result.relations_created} relations, "
-                    f"{result.iocs_created} IOCs"
-                )
+                if (i + 1) % 50 == 0:
+                    _progress(
+                        f"Processed {i+1} articles: "
+                        f"{result.entities_created} entities, "
+                        f"{result.relations_created} relations, "
+                        f"{result.iocs_created} IOCs"
+                    )
     finally:
         client.close()
 
@@ -217,14 +251,20 @@ def _iter_feedly_docs(
     index_name: str,
     since: datetime,
     settings: Settings,
+    *,
+    until: Optional[datetime] = None,
 ) -> Iterator[Dict[str, Any]]:
     """Page through feedly docs using search_after for constant memory."""
     page_size = settings.elastic_connector_page_size
 
+    time_filter: Dict[str, Any] = {"gte": since.isoformat()}
+    if until is not None:
+        time_filter["lt"] = until.isoformat()
+
     query: Dict[str, Any] = {
         "bool": {
             "must": [
-                {"range": {"fetched_at": {"gte": since.isoformat()}}},
+                {"range": {"fetched_at": time_filter}},
             ]
         }
     }
@@ -355,12 +395,22 @@ def _process_article(
             attrs={"origin": "feedly", "salience": salience},
         )
         stored = graph_store.upsert_relations([rel])[0]
+        chunk_id = str(fe.get("id", stored.id))
+        snippet = f"Feedly: {title[:100]} -> {label}"
         prov = Provenance(
-            provenance_id=str(uuid4()),
+            provenance_id=_det_prov_id(
+                source_uri=source_uri,
+                relation_id=stored.id,
+                model="feedly-ai",
+                chunk_id=chunk_id,
+                start_offset=0,
+                end_offset=0,
+                snippet=snippet,
+            ),
             source_uri=source_uri,
-            chunk_id=fe.get("id", stored.id),
+            chunk_id=chunk_id,
             start_offset=0, end_offset=0,
-            snippet=f"Feedly: {title[:100]} → {label}",
+            snippet=snippet,
             extraction_run_id=sync_run_id,
             model="feedly-ai",
             prompt_version="feedly-entities",
@@ -388,12 +438,22 @@ def _process_article(
                 attrs={"origin": "feedly", "relationship": "causes"},
             )
             stored_cause = graph_store.upsert_relations([cause_rel])[0]
+            cause_chunk_id = str(cause.get("id", stored_cause.id))
+            cause_snippet = f"Feedly entity cause: {label} <- {cause_label}"
             graph_store.attach_provenance(stored_cause.id, Provenance(
-                provenance_id=str(uuid4()),
+                provenance_id=_det_prov_id(
+                    source_uri=source_uri,
+                    relation_id=stored_cause.id,
+                    model="feedly-ai",
+                    chunk_id=cause_chunk_id,
+                    start_offset=0,
+                    end_offset=0,
+                    snippet=cause_snippet,
+                ),
                 source_uri=source_uri,
-                chunk_id=cause.get("id", stored_cause.id),
+                chunk_id=cause_chunk_id,
                 start_offset=0, end_offset=0,
-                snippet=f"Feedly entity cause: {label} ← {cause_label}",
+                snippet=cause_snippet,
                 extraction_run_id=sync_run_id,
                 model="feedly-ai",
                 prompt_version="feedly-entities",
@@ -422,12 +482,22 @@ def _process_article(
             attrs={"origin": "feedly", "topic_score": score},
         )
         stored = graph_store.upsert_relations([rel])[0]
+        topic_chunk_id = str(stored.id)
+        topic_snippet = f"Feedly topic: {title[:80]} tagged {topic_label}"
         graph_store.attach_provenance(stored.id, Provenance(
-            provenance_id=str(uuid4()),
+            provenance_id=_det_prov_id(
+                source_uri=source_uri,
+                relation_id=stored.id,
+                model="feedly-ai",
+                chunk_id=topic_chunk_id,
+                start_offset=0,
+                end_offset=0,
+                snippet=topic_snippet,
+            ),
             source_uri=source_uri,
-            chunk_id=stored.id,
+            chunk_id=topic_chunk_id,
             start_offset=0, end_offset=0,
-            snippet=f"Feedly topic: {title[:80]} tagged {topic_label}",
+            snippet=topic_snippet,
             extraction_run_id=sync_run_id,
             model="feedly-ai",
             prompt_version="feedly-topics",
@@ -462,12 +532,22 @@ def _process_article(
             attrs={"origin": "feedly", "ioc_type": ioc_type},
         )
         stored = graph_store.upsert_relations([rel])[0]
+        ioc_chunk_id = str(stored.id)
+        ioc_snippet = f"Feedly IOC: {ioc_type} {ioc_text[:80]}"
         graph_store.attach_provenance(stored.id, Provenance(
-            provenance_id=str(uuid4()),
+            provenance_id=_det_prov_id(
+                source_uri=source_uri,
+                relation_id=stored.id,
+                model="feedly-ai",
+                chunk_id=ioc_chunk_id,
+                start_offset=0,
+                end_offset=0,
+                snippet=ioc_snippet,
+            ),
             source_uri=source_uri,
-            chunk_id=stored.id,
+            chunk_id=ioc_chunk_id,
             start_offset=0, end_offset=0,
-            snippet=f"Feedly IOC: {ioc_type} {ioc_text[:80]}",
+            snippet=ioc_snippet,
             extraction_run_id=sync_run_id,
             model="feedly-ai",
             prompt_version="feedly-ioc",
@@ -493,12 +573,22 @@ def _process_article(
             attrs={"origin": "feedly", "tag_source": "keyword"},
         )
         stored = graph_store.upsert_relations([rel])[0]
+        kw_chunk_id = str(stored.id)
+        kw_snippet = f"Feedly keyword: {kw}"
         graph_store.attach_provenance(stored.id, Provenance(
-            provenance_id=str(uuid4()),
+            provenance_id=_det_prov_id(
+                source_uri=source_uri,
+                relation_id=stored.id,
+                model="feedly-ai",
+                chunk_id=kw_chunk_id,
+                start_offset=0,
+                end_offset=0,
+                snippet=kw_snippet,
+            ),
             source_uri=source_uri,
-            chunk_id=stored.id,
+            chunk_id=kw_chunk_id,
             start_offset=0, end_offset=0,
-            snippet=f"Feedly keyword: {kw}",
+            snippet=kw_snippet,
             extraction_run_id=sync_run_id,
             model="feedly-ai",
             prompt_version="feedly-keywords",

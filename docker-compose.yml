@@ -21,3 +21,13 @@ services:
       - /mnt/nvme0n1p1/wellspring:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  backfill:
+    build: .
+    profiles: ["backfill"]
+    command: ["python", "-m", "wellspring.backfill"]
+    env_file: .env
+    volumes:
+      - /mnt/nvme0n1p1/wellspring:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

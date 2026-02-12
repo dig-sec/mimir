@@ -1525,3 +1525,67 @@ def get_watched_folders():
         count = sum(1 for _ in root.rglob("*") if _.is_file()) if root.is_dir() else 0
         result.append({"path": d, "exists": root.is_dir(), "file_count": count})
     return result
+
+
+# ── Backfill ──────────────────────────────────────────────────
+
+@router.post("/api/backfill")
+async def start_backfill(
+    source: str = Query(default="all", pattern="^(all|feedly|opencti)$", description="all, feedly, or opencti"),
+    reset: bool = Query(default=False, description="Wipe checkpoints and restart from beginning"),
+):
+    """Kick off a full historical backfill as a background task."""
+    from ..backfill import CheckpointStore, run_backfill
+
+    es_client = getattr(graph_store, "client", None)
+    if es_client is None:
+        raise HTTPException(status_code=501, detail="Backfill requires Elasticsearch backend")
+
+    sources = [source] if source != "all" else ["all"]
+
+    task = task_manager.create("backfill", {"sources": sources, "reset": reset})
+    task_manager.update(task.id, status=TaskStatus.RUNNING, progress="Starting backfill...")
+
+    def _run_sync():
+        try:
+            checkpoints = CheckpointStore(es_client, settings.elastic_index_prefix)
+            results = run_backfill(
+                settings, graph_store, run_store, checkpoints,
+                sources=sources,
+                reset=reset,
+                progress_cb=lambda msg: task_manager.update(task.id, progress=msg),
+            )
+            task_manager.update(
+                task.id,
+                status=TaskStatus.COMPLETED,
+                progress="Backfill complete",
+                detail=results,
+                finished_at=datetime.utcnow().isoformat(),
+            )
+        except Exception as exc:
+            task_manager.update(
+                task.id,
+                status=TaskStatus.FAILED,
+                error=str(exc),
+                finished_at=datetime.utcnow().isoformat(),
+            )
+
+    async def _run():
+        import asyncio
+        await asyncio.to_thread(_run_sync)
+
+    task_manager.start_async(task.id, _run())
+    return {"task_id": task.id, "status": "running"}
+
+
+@router.get("/api/backfill/status")
+def backfill_status():
+    """Return the current checkpoint state for all backfill sources."""
+    from ..backfill import CheckpointStore, get_backfill_status
+
+    es_client = getattr(graph_store, "client", None)
+    if es_client is None:
+        raise HTTPException(status_code=501, detail="Backfill requires Elasticsearch backend")
+
+    checkpoints = CheckpointStore(es_client, settings.elastic_index_prefix)
+    return get_backfill_status(checkpoints)

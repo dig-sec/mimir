@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
-from uuid import uuid4
+from uuid import UUID, uuid4, uuid5
 
 from ..chunking import chunk_text
 from ..config import Settings
@@ -15,6 +16,26 @@ from ..normalize import normalize_predicate
 from ..schemas import Entity, Provenance, Relation
 from ..storage.base import GraphStore
 from ..storage.run_store import RunStore
+
+_NS_PROVENANCE = UUID("c3d4e5f6-a7b8-9012-cdef-123456789012")
+
+
+def _det_prov_id(
+    *,
+    source_uri: str,
+    relation_id: str,
+    model: str,
+    chunk_id: str,
+    start_offset: int,
+    end_offset: int,
+    snippet: str,
+) -> str:
+    snippet_hash = hashlib.sha1(snippet.encode("utf-8")).hexdigest()
+    material = (
+        f"{source_uri}|{relation_id}|{model}|{chunk_id}|"
+        f"{start_offset}|{end_offset}|{snippet_hash}"
+    )
+    return str(uuid5(_NS_PROVENANCE, material))
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +219,7 @@ async def process_run(
             triples = extract_triples(raw)
             chunk_entities: list[Entity] = []
             extracted_relations: list[Relation] = []
+            snippet = _snippet(chunk.text)
             for triple in triples:
                 predicate = normalize_predicate(triple.predicate)
                 if not predicate:
@@ -217,12 +239,20 @@ async def process_run(
                 stored_relations = graph_store.upsert_relations([relation])
                 stored_relation = stored_relations[0]
                 provenance = Provenance(
-                    provenance_id=str(uuid4()),
+                    provenance_id=_det_prov_id(
+                        source_uri=chunk.source_uri,
+                        relation_id=stored_relation.id,
+                        model=settings.ollama_model,
+                        chunk_id=chunk.chunk_id,
+                        start_offset=chunk.start_offset,
+                        end_offset=chunk.end_offset,
+                        snippet=snippet,
+                    ),
                     source_uri=chunk.source_uri,
                     chunk_id=chunk.chunk_id,
                     start_offset=chunk.start_offset,
                     end_offset=chunk.end_offset,
-                    snippet=_snippet(chunk.text),
+                    snippet=snippet,
                     extraction_run_id=run_id,
                     model=settings.ollama_model,
                     prompt_version=settings.prompt_version,
@@ -235,12 +265,20 @@ async def process_run(
                     stored_inferred = graph_store.upsert_relations(inferred)
                     for stored_relation in stored_inferred:
                         provenance = Provenance(
-                            provenance_id=str(uuid4()),
+                            provenance_id=_det_prov_id(
+                                source_uri=chunk.source_uri,
+                                relation_id=stored_relation.id,
+                                model=settings.ollama_model,
+                                chunk_id=chunk.chunk_id,
+                                start_offset=chunk.start_offset,
+                                end_offset=chunk.end_offset,
+                                snippet=snippet,
+                            ),
                             source_uri=chunk.source_uri,
                             chunk_id=chunk.chunk_id,
                             start_offset=chunk.start_offset,
                             end_offset=chunk.end_offset,
-                            snippet=_snippet(chunk.text),
+                            snippet=snippet,
                             extraction_run_id=run_id,
                             model=settings.ollama_model,
                             prompt_version=settings.prompt_version,
@@ -255,12 +293,20 @@ async def process_run(
                     stored = graph_store.upsert_relations(co_relations)
                     for stored_relation in stored:
                         provenance = Provenance(
-                            provenance_id=str(uuid4()),
+                            provenance_id=_det_prov_id(
+                                source_uri=chunk.source_uri,
+                                relation_id=stored_relation.id,
+                                model=settings.ollama_model,
+                                chunk_id=chunk.chunk_id,
+                                start_offset=chunk.start_offset,
+                                end_offset=chunk.end_offset,
+                                snippet=snippet,
+                            ),
                             source_uri=chunk.source_uri,
                             chunk_id=chunk.chunk_id,
                             start_offset=chunk.start_offset,
                             end_offset=chunk.end_offset,
-                            snippet=_snippet(chunk.text),
+                            snippet=snippet,
                             extraction_run_id=run_id,
                             model=settings.ollama_model,
                             prompt_version=settings.prompt_version,

@@ -100,6 +100,8 @@ class Settings:
         "@timestamp,published,published_at,updated_at,created_at,timestamp",
     )
     watched_folders: str = os.getenv("WATCHED_FOLDERS", "/data/documents")
+    sync_interval_minutes: int = int(os.getenv("SYNC_INTERVAL_MINUTES", "30"))
+    sync_lookback_minutes: int = int(os.getenv("SYNC_LOOKBACK_MINUTES", "60"))
 
     @property
     def elastic_hosts_list(self) -> List[str]:

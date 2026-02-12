@@ -3,11 +3,15 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
-from uuid import uuid4
+from uuid import UUID, uuid4, uuid5
 
 from elasticsearch import ApiError, ConflictError, Elasticsearch, NotFoundError
 
 from ..normalize import canonical_entity_key
+
+# Namespace UUID for deterministic entity/relation IDs
+_NS_ENTITY = UUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+_NS_RELATION = UUID("b2c3d4e5-f6a7-8901-bcde-f12345678901")
 from ..schemas import (
     Chunk,
     Entity,
@@ -59,8 +63,22 @@ def _entity_keys(name: str, entity_type: Optional[str], aliases: List[str]) -> L
     return sorted(k for k in keys if k)
 
 
+def _deterministic_entity_id(canonical_key: str) -> str:
+    """Generate a stable UUID from a canonical entity key.
+
+    Same (name, type) always produces the same ID, so re-ingesting
+    the same entity is an update rather than a duplicate insert.
+    """
+    return str(uuid5(_NS_ENTITY, canonical_key))
+
+
 def _triple_key(subject_id: str, predicate: str, object_id: str) -> str:
     return f"{subject_id}|{predicate}|{object_id}"
+
+
+def _deterministic_relation_id(triple_key: str) -> str:
+    """Stable UUID from a triple key so relations are idempotent."""
+    return str(uuid5(_NS_RELATION, triple_key))
 
 
 def _create_client(
@@ -177,7 +195,43 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
         verify_certs: bool = True,
     ) -> None:
         super().__init__(hosts, username, password, index_prefix, verify_certs)
+        self._refresh: Any = "wait_for"
         self._ensure_indices()
+
+    def bulk_mode(self):
+        """Context manager that disables per-write refresh for throughput.
+
+        Writes inside the block use ``refresh=False`` so Elasticsearch
+        batches shard refreshes naturally (~1 s interval).  On exit,
+        a manual refresh is issued on all graph indices so subsequent
+        reads see the new data.
+
+        Usage::
+
+            with graph_store.bulk_mode():
+                graph_store.upsert_entities([...])
+                graph_store.upsert_relations([...])
+        """
+        import contextlib
+
+        @contextlib.contextmanager
+        def _ctx():
+            prev = self._refresh
+            self._refresh = False
+            try:
+                yield
+            finally:
+                self._refresh = prev
+                # Refresh all graph indices so data is immediately searchable
+                try:
+                    self.client.indices.refresh(
+                        index=f"{self.indices.entities},{self.indices.relations},"
+                               f"{self.indices.provenance},{self.indices.relation_provenance}"
+                    )
+                except Exception:
+                    pass
+
+        return _ctx()
 
     def _ensure_indices(self) -> None:
         self._ensure_index(
@@ -287,126 +341,106 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
         stored: List[Entity] = []
         for entity in entities:
             canonical = canonical_entity_key(entity.name, entity.type)
-            existing = self.client.search(
+            deterministic_id = _deterministic_entity_id(canonical)
+            aliases = entity.aliases or []
+            hits = self.client.search(
                 index=self.indices.entities,
                 query={"term": {"canonical_key": canonical}},
-                size=1,
+                size=10,
             ).get("hits", {}).get("hits", [])
-            if existing:
-                hit = existing[0]
-                existing_id = hit["_id"]
-                source = hit["_source"]
-                merged_aliases = sorted({*(source.get("aliases") or []), *(entity.aliases or [])})
-                merged_attrs = {**(source.get("attrs") or {}), **entity.attrs}
-                keys = _entity_keys(entity.name, entity.type, merged_aliases)
-                doc = {
-                    "name": entity.name,
-                    "type": entity.type,
-                    "aliases": merged_aliases,
-                    "attrs": merged_attrs,
-                    "canonical_key": canonical,
-                    "keys": keys,
-                }
-                self.client.update(
-                    index=self.indices.entities,
-                    id=existing_id,
-                    doc=doc,
-                    refresh="wait_for",
-                )
-                stored.append(
-                    Entity(
-                        id=existing_id,
-                        name=entity.name,
-                        type=entity.type,
-                        aliases=merged_aliases,
-                        attrs=merged_attrs,
-                    )
-                )
-            else:
-                entity_id = entity.id or str(uuid4())
-                aliases = entity.aliases or []
-                doc = {
-                    "name": entity.name,
-                    "type": entity.type,
-                    "aliases": aliases,
-                    "attrs": entity.attrs,
-                    "canonical_key": canonical,
-                    "keys": _entity_keys(entity.name, entity.type, aliases),
-                }
-                self.client.index(
-                    index=self.indices.entities,
+
+            entity_id = deterministic_id
+            existing_sources: List[Dict[str, Any]] = []
+            if hits:
+                # Keep legacy IDs stable to avoid breaking existing relation pointers.
+                chosen = next((hit for hit in hits if hit["_id"] == deterministic_id), hits[0])
+                entity_id = chosen["_id"]
+                existing_sources = [hit["_source"] for hit in hits]
+
+            merged_aliases_set = set(aliases)
+            merged_attrs: Dict[str, Any] = {}
+            for source in existing_sources:
+                merged_aliases_set.update(source.get("aliases") or [])
+                merged_attrs.update(source.get("attrs") or {})
+            merged_attrs.update(entity.attrs)
+            merged_aliases = sorted(merged_aliases_set)
+
+            keys = _entity_keys(entity.name, entity.type, merged_aliases)
+            doc = {
+                "name": entity.name,
+                "type": entity.type,
+                "aliases": merged_aliases,
+                "attrs": merged_attrs,
+                "canonical_key": canonical,
+                "keys": keys,
+            }
+            self.client.index(
+                index=self.indices.entities,
+                id=entity_id,
+                document=doc,
+                refresh=self._refresh,
+            )
+            stored.append(
+                Entity(
                     id=entity_id,
-                    document=doc,
-                    refresh="wait_for",
+                    name=entity.name,
+                    type=entity.type,
+                    aliases=merged_aliases,
+                    attrs=merged_attrs,
                 )
-                stored.append(
-                    Entity(
-                        id=entity_id,
-                        name=entity.name,
-                        type=entity.type,
-                        aliases=aliases,
-                        attrs=entity.attrs,
-                    )
-                )
+            )
         return stored
 
     def upsert_relations(self, relations: List[Relation]) -> List[Relation]:
         stored: List[Relation] = []
         for relation in relations:
             key = _triple_key(relation.subject_id, relation.predicate, relation.object_id)
-            existing = self.client.search(
+            deterministic_id = _deterministic_relation_id(key)
+            hits = self.client.search(
                 index=self.indices.relations,
                 query={"term": {"triple_key": key}},
-                size=1,
+                size=10,
             ).get("hits", {}).get("hits", [])
-            if existing:
-                hit = existing[0]
-                existing_id = hit["_id"]
-                source = hit["_source"]
-                confidence = max(float(source.get("confidence", 0.0)), relation.confidence)
-                merged_attrs = _merge_attrs(source.get("attrs") or {}, relation.attrs)
-                self.client.update(
-                    index=self.indices.relations,
-                    id=existing_id,
-                    doc={"confidence": confidence, "attrs": merged_attrs},
-                    refresh="wait_for",
-                )
-                stored.append(
-                    Relation(
-                        id=existing_id,
-                        subject_id=source["subject_id"],
-                        predicate=source["predicate"],
-                        object_id=source["object_id"],
-                        confidence=confidence,
-                        attrs=merged_attrs,
-                    )
-                )
-            else:
-                relation_id = relation.id or str(uuid4())
-                doc = {
-                    "subject_id": relation.subject_id,
-                    "predicate": relation.predicate,
-                    "object_id": relation.object_id,
-                    "confidence": relation.confidence,
-                    "attrs": relation.attrs,
-                    "triple_key": key,
-                }
-                self.client.index(
-                    index=self.indices.relations,
+
+            relation_id = deterministic_id
+            existing_sources: List[Dict[str, Any]] = []
+            if hits:
+                # Keep legacy IDs stable to avoid breaking existing provenance pointers.
+                chosen = next((hit for hit in hits if hit["_id"] == deterministic_id), hits[0])
+                relation_id = chosen["_id"]
+                existing_sources = [hit["_source"] for hit in hits]
+
+            confidence = relation.confidence
+            merged_attrs: Dict[str, Any] = {}
+            for source in existing_sources:
+                confidence = max(confidence, float(source.get("confidence", 0.0)))
+                merged_attrs = _merge_attrs(merged_attrs, source.get("attrs") or {})
+            merged_attrs = _merge_attrs(merged_attrs, relation.attrs)
+
+            doc = {
+                "subject_id": relation.subject_id,
+                "predicate": relation.predicate,
+                "object_id": relation.object_id,
+                "confidence": confidence,
+                "attrs": merged_attrs,
+                "triple_key": key,
+            }
+            self.client.index(
+                index=self.indices.relations,
+                id=relation_id,
+                document=doc,
+                refresh=self._refresh,
+            )
+            stored.append(
+                Relation(
                     id=relation_id,
-                    document=doc,
-                    refresh="wait_for",
+                    subject_id=relation.subject_id,
+                    predicate=relation.predicate,
+                    object_id=relation.object_id,
+                    confidence=confidence,
+                    attrs=merged_attrs,
                 )
-                stored.append(
-                    Relation(
-                        id=relation_id,
-                        subject_id=relation.subject_id,
-                        predicate=relation.predicate,
-                        object_id=relation.object_id,
-                        confidence=relation.confidence,
-                        attrs=relation.attrs,
-                    )
-                )
+            )
         return stored
 
     def attach_provenance(self, relation_id: str, provenance: Provenance) -> None:
@@ -426,7 +460,7 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
                 index=self.indices.provenance,
                 id=provenance.provenance_id,
                 document=provenance_doc,
-                refresh="wait_for",
+                refresh=self._refresh,
             )
         except ConflictError:
             pass
@@ -444,7 +478,7 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
                 index=self.indices.relation_provenance,
                 id=relation_provenance_id,
                 document=mapping_doc,
-                refresh="wait_for",
+                refresh=self._refresh,
             )
         except ConflictError:
             pass

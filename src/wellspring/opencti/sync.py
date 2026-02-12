@@ -6,10 +6,11 @@ Entities are processed page-by-page (streaming) to keep memory constant.
 from __future__ import annotations
 
 import logging
+import hashlib
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
-from uuid import uuid4
+from uuid import UUID, uuid4, uuid5
 
 from .client import OpenCTIClient
 from ..dedupe import EntityResolver
@@ -18,6 +19,26 @@ from ..schemas import ExtractionRun, Provenance, Relation
 from ..storage.base import GraphStore
 
 logger = logging.getLogger(__name__)
+
+_NS_PROVENANCE = UUID("c3d4e5f6-a7b8-9012-cdef-123456789012")
+
+
+def _det_prov_id(
+    *,
+    source_uri: str,
+    relation_id: str,
+    model: str,
+    chunk_id: str,
+    start_offset: int,
+    end_offset: int,
+    snippet: str,
+) -> str:
+    snippet_hash = hashlib.sha1(snippet.encode("utf-8")).hexdigest()
+    material = (
+        f"{source_uri}|{relation_id}|{model}|{chunk_id}|"
+        f"{start_offset}|{end_offset}|{snippet_hash}"
+    )
+    return str(uuid5(_NS_PROVENANCE, material))
 
 # OpenCTI entity_type → Wellspring entity type
 _TYPE_MAP: Dict[str, str] = {
@@ -68,21 +89,29 @@ def pull_from_opencti(
         if progress_cb:
             progress_cb(msg)
 
-    for i, entity_type in enumerate(entity_types, 1):
-        _progress(f"[{i}/{len(entity_types)}] Fetching {entity_type}...")
-        try:
-            if entity_type == "Report":
-                _sync_reports(opencti, graph_store, resolver, result,
-                              run_store, settings, _progress, i, len(entity_types), sync_run_id,
-                              max_per_type)
-            else:
-                _sync_entity_type(opencti, graph_store, resolver, result,
-                                  entity_type, _progress, i, len(entity_types), sync_run_id,
+    import contextlib
+    bulk_ctx = (
+        graph_store.bulk_mode()
+        if hasattr(graph_store, "bulk_mode")
+        else contextlib.nullcontext()
+    )
+
+    with bulk_ctx:
+        for i, entity_type in enumerate(entity_types, 1):
+            _progress(f"[{i}/{len(entity_types)}] Fetching {entity_type}...")
+            try:
+                if entity_type == "Report":
+                    _sync_reports(opencti, graph_store, resolver, result,
+                                  run_store, settings, _progress, i, len(entity_types), sync_run_id,
                                   max_per_type)
-        except Exception as exc:
-            logger.warning("Failed to pull %s: %s", entity_type, exc)
-            result.errors.append(f"{entity_type}: {exc}")
-            continue
+                else:
+                    _sync_entity_type(opencti, graph_store, resolver, result,
+                                      entity_type, _progress, i, len(entity_types), sync_run_id,
+                                      max_per_type)
+            except Exception as exc:
+                logger.warning("Failed to pull %s: %s", entity_type, exc)
+                result.errors.append(f"{entity_type}: {exc}")
+                continue
 
     logger.info(
         "Pulled %d entities, %d relations, queued %d reports for LLM (%d errors)",
@@ -157,13 +186,24 @@ def _sync_entity_type(
                 },
             )
             stored_relation = graph_store.upsert_relations([relation])[0]
+            source_uri = f"opencti://{entity_type}/{ent.get('id', 'unknown')}"
+            chunk_id = str(rel.get("id") or stored_relation.id)
+            snippet = f"OpenCTI: {from_name} {predicate} {to_name}"
             provenance = Provenance(
-                provenance_id=str(uuid4()),
-                source_uri=f"opencti://{entity_type}/{ent.get('id', 'unknown')}",
-                chunk_id=rel.get("id") or stored_relation.id,
+                provenance_id=_det_prov_id(
+                    source_uri=source_uri,
+                    relation_id=stored_relation.id,
+                    model="opencti",
+                    chunk_id=chunk_id,
+                    start_offset=0,
+                    end_offset=0,
+                    snippet=snippet,
+                ),
+                source_uri=source_uri,
+                chunk_id=chunk_id,
                 start_offset=0,
                 end_offset=0,
-                snippet=f"OpenCTI: {from_name} {predicate} {to_name}",
+                snippet=snippet,
                 extraction_run_id=sync_run_id,
                 model="opencti",
                 prompt_version="opencti-sync",
@@ -234,13 +274,24 @@ def _sync_reports(
                 attrs={"origin": "opencti"},
             )
             stored_relation = graph_store.upsert_relations([rel])[0]
+            source_uri = f"opencti://report/{rpt.get('id', 'unknown')}"
+            chunk_id = str(obj.get("id") or stored_relation.id)
+            snippet = f"OpenCTI report mentions: {report_entity.name} -> {obj_entity.name}"
             provenance = Provenance(
-                provenance_id=str(uuid4()),
-                source_uri=f"opencti://report/{rpt.get('id', 'unknown')}",
-                chunk_id=obj.get("id") or stored_relation.id,
+                provenance_id=_det_prov_id(
+                    source_uri=source_uri,
+                    relation_id=stored_relation.id,
+                    model="opencti",
+                    chunk_id=chunk_id,
+                    start_offset=0,
+                    end_offset=0,
+                    snippet=snippet,
+                ),
+                source_uri=source_uri,
+                chunk_id=chunk_id,
                 start_offset=0,
                 end_offset=0,
-                snippet=f"OpenCTI report mentions: {report_entity.name} -> {obj_entity.name}",
+                snippet=snippet,
                 extraction_run_id=sync_run_id,
                 model="opencti",
                 prompt_version="opencti-sync",
@@ -272,13 +323,24 @@ def _sync_reports(
                 attrs={"origin": "opencti", "opencti_rel_id": rel_data.get("id", "")},
             )
             stored_relation = graph_store.upsert_relations([rel])[0]
+            source_uri = f"opencti://report/{rpt.get('id', 'unknown')}"
+            chunk_id = str(rel_data.get("id") or stored_relation.id)
+            snippet = f"OpenCTI report relation: {from_name} {predicate} {to_name}"
             provenance = Provenance(
-                provenance_id=str(uuid4()),
-                source_uri=f"opencti://report/{rpt.get('id', 'unknown')}",
-                chunk_id=rel_data.get("id") or stored_relation.id,
+                provenance_id=_det_prov_id(
+                    source_uri=source_uri,
+                    relation_id=stored_relation.id,
+                    model="opencti",
+                    chunk_id=chunk_id,
+                    start_offset=0,
+                    end_offset=0,
+                    snippet=snippet,
+                ),
+                source_uri=source_uri,
+                chunk_id=chunk_id,
                 start_offset=0,
                 end_offset=0,
-                snippet=f"OpenCTI report relation: {from_name} {predicate} {to_name}",
+                snippet=snippet,
                 extraction_run_id=sync_run_id,
                 model="opencti",
                 prompt_version="opencti-sync",
