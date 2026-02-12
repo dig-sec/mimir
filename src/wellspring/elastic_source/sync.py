@@ -1,12 +1,13 @@
 """Sync documents from Elasticsearch source indices into run queue."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
 import hashlib
 import html
 import json
 import re
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from ..config import Settings
@@ -156,7 +157,9 @@ def _build_document_text(
     return title, "\n\n".join(text_parts).strip()
 
 
-def _select_timestamp_field(field_types: Dict[str, str], candidates: List[str]) -> Optional[str]:
+def _select_timestamp_field(
+    field_types: Dict[str, str], candidates: List[str]
+) -> Optional[str]:
     first_existing: Optional[str] = None
     for candidate in candidates:
         field_type = field_types.get(candidate)
@@ -172,7 +175,9 @@ def _select_timestamp_field(field_types: Dict[str, str], candidates: List[str]) 
     return None
 
 
-def _select_existing_fields(field_types: Dict[str, str], candidates: List[str]) -> List[str]:
+def _select_existing_fields(
+    field_types: Dict[str, str], candidates: List[str]
+) -> List[str]:
     return [candidate for candidate in candidates if candidate in field_types]
 
 
@@ -196,7 +201,9 @@ def _build_version_token(
 
 
 def _build_run_id(index: str, doc_id: str, version_token: str) -> str:
-    digest = hashlib.sha1(f"{index}|{doc_id}|{version_token}".encode("utf-8")).hexdigest()
+    digest = hashlib.sha1(
+        f"{index}|{doc_id}|{version_token}".encode("utf-8")
+    ).hexdigest()
     return f"es-{digest}"
 
 
@@ -258,9 +265,15 @@ def pull_from_elasticsearch(
             result.errors.append(f"{index_name}: mapping error: {exc}")
             continue
 
-        title_fields = _select_existing_fields(field_types, settings.elastic_connector_title_fields_list)
-        text_fields = _select_existing_fields(field_types, settings.elastic_connector_text_fields_list)
-        url_fields = _select_existing_fields(field_types, settings.elastic_connector_url_fields_list)
+        title_fields = _select_existing_fields(
+            field_types, settings.elastic_connector_title_fields_list
+        )
+        text_fields = _select_existing_fields(
+            field_types, settings.elastic_connector_text_fields_list
+        )
+        url_fields = _select_existing_fields(
+            field_types, settings.elastic_connector_url_fields_list
+        )
         timestamp_field = _select_timestamp_field(
             field_types,
             settings.elastic_connector_timestamp_fields_list,

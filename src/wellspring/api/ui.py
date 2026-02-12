@@ -18,6 +18,7 @@ def render_root_ui() -> str:
     <h1>Wellspring</h1>
     <div class="tab-bar">
       <button class="tab-btn active" data-tab="explore">Explore</button>
+      <button class="tab-btn" data-tab="pir">PIR</button>
     </div>
     <div class="spacer"></div>
     <span id="statsBar" style="font-size:12px;color:#6b7280;font-family:monospace"></span>
@@ -50,7 +51,15 @@ def render_root_ui() -> str:
           </div>
           <div class="controls">
             <div class="ctrl-group">
-              <label>Depth</label>
+              <label class="label-help">
+                <span>Depth</span>
+                <button
+                  type="button"
+                  class="help-dot"
+                  aria-label="Depth help"
+                  data-tip="Depth controls graph expansion hops from the seed entity. 0 = seed only, 1 = direct neighbors, 2+ expands further and can grow results quickly."
+                >?</button>
+              </label>
               <input type="number" id="depthInput" value="2" min="0" max="5" />
             </div>
             <div class="ctrl-group">
@@ -164,10 +173,49 @@ def render_root_ui() -> str:
           </div>
         </div>
       </div>
-
-
-
     </aside>
+
+    <!-- == PIR DASHBOARD (full-width) == -->
+    <div class="pir-dashboard" id="pirDashboard" style="display:none">
+      <div class="pir-dash-header">
+        <div class="pir-dash-title">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          <h2>Priority Intelligence Requirements</h2>
+        </div>
+        <div class="pir-dash-controls">
+          <div class="pir-toolbar-group">
+            <label>From</label>
+            <input type="date" id="pirDateFrom" />
+          </div>
+          <div class="pir-toolbar-group">
+            <label>To</label>
+            <input type="date" id="pirDateTo" />
+          </div>
+          <div class="pir-toolbar-group">
+            <label>Show top</label>
+            <select id="pirTopNInput">
+              <option value="5" selected>5</option>
+              <option value="10">10</option>
+              <option value="20">20</option>
+              <option value="50">50</option>
+            </select>
+          </div>
+          <button class="btn btn-primary btn-sm" id="pirRefreshBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            Refresh
+          </button>
+        </div>
+      </div>
+      <div class="pir-dash-body" id="pirList">
+        <div class="pir-skeleton">
+          <div class="pir-skeleton-card"></div>
+          <div class="pir-skeleton-card"></div>
+          <div class="pir-skeleton-card"></div>
+          <div class="pir-skeleton-card"></div>
+          <div class="pir-skeleton-card"></div>
+        </div>
+      </div>
+    </div>
 
     <!-- == GRAPH AREA == -->
     <div class="graph-area" id="graphArea">

@@ -20,6 +20,7 @@ Usage (API)::
     POST /api/backfill?source=opencti
     POST /api/backfill?reset=true
 """
+
 from __future__ import annotations
 
 import argparse
@@ -30,8 +31,8 @@ from typing import Any, Dict, List, Optional
 
 from .config import Settings, get_settings
 from .storage.base import GraphStore
-from .storage.run_store import RunStore
 from .storage.factory import create_graph_store, create_run_store
+from .storage.run_store import RunStore
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ _BATCH_WINDOW_HOURS = 24  # 1-day windows
 
 
 # ── Checkpoint store ─────────────────────────────────────────
+
 
 class CheckpointStore:
     """Tiny k/v store backed by a single ES index for resumable backfill."""
@@ -132,6 +134,7 @@ class CheckpointStore:
 
 # ── Feedly backfill ──────────────────────────────────────────
 
+
 def backfill_feedly(
     settings: Settings,
     graph_store: GraphStore,
@@ -160,8 +163,14 @@ def backfill_feedly(
     for index_name in indices:
         source_key = f"feedly:{index_name}"
         resume_from = checkpoints.get(source_key) or _EPOCH
-        _progress(f"Feedly backfill [{index_name}]: resuming from {resume_from.isoformat()}")
-        logger.info("Feedly backfill index %s starting from %s", index_name, resume_from.isoformat())
+        _progress(
+            f"Feedly backfill [{index_name}]: resuming from {resume_from.isoformat()}"
+        )
+        logger.info(
+            "Feedly backfill index %s starting from %s",
+            index_name,
+            resume_from.isoformat(),
+        )
 
         index_articles = 0
         index_entities = 0
@@ -231,7 +240,9 @@ def backfill_feedly(
                     index_relations,
                 )
             except Exception as exc:
-                logger.exception("Feedly [%s] batch %d failed", index_name, index_batches)
+                logger.exception(
+                    "Feedly [%s] batch %d failed", index_name, index_batches
+                )
                 error_msg = f"{index_name} batch {index_batches}: {exc}"
                 index_errors.append(error_msg)
                 # Stop this index so the same window can be retried on next run.
@@ -269,6 +280,7 @@ def backfill_feedly(
 
 # ── OpenCTI backfill ─────────────────────────────────────────
 
+
 def backfill_opencti(
     settings: Settings,
     graph_store: GraphStore,
@@ -297,11 +309,20 @@ def backfill_opencti(
     client = OpenCTIClient(settings.opencti_url, settings.opencti_token)
     try:
         result = pull_from_opencti(
-            client, graph_store,
+            client,
+            graph_store,
             entity_types=[
-                "Malware", "Threat-Actor", "Attack-Pattern", "Tool",
-                "Vulnerability", "Campaign", "Intrusion-Set",
-                "Indicator", "Infrastructure", "Course-Of-Action", "Report",
+                "Malware",
+                "Threat-Actor",
+                "Attack-Pattern",
+                "Tool",
+                "Vulnerability",
+                "Campaign",
+                "Intrusion-Set",
+                "Indicator",
+                "Infrastructure",
+                "Course-Of-Action",
+                "Report",
             ],
             max_per_type=0,  # unlimited
             run_store=run_store,
@@ -331,12 +352,14 @@ def backfill_opencti(
     )
     logger.info(
         "OpenCTI backfill done: %d entities, %d relations",
-        result.entities_pulled, result.relations_pulled,
+        result.entities_pulled,
+        result.relations_pulled,
     )
     return summary
 
 
 # ── Orchestrator ─────────────────────────────────────────────
+
 
 def run_backfill(
     settings: Settings,
@@ -364,7 +387,9 @@ def run_backfill(
     if reset:
         for s in sources:
             if s == "feedly":
-                for index_name in (settings.elastic_connector_indices_list or ["feedly_news"]):
+                for index_name in settings.elastic_connector_indices_list or [
+                    "feedly_news"
+                ]:
                     source_key = f"feedly:{index_name}"
                     checkpoints.delete(source_key)
                     logger.info("Reset checkpoint for %s", source_key)
@@ -377,12 +402,17 @@ def run_backfill(
     for source in sources:
         if source == "feedly":
             results["feedly"] = backfill_feedly(
-                settings, graph_store, checkpoints,
+                settings,
+                graph_store,
+                checkpoints,
                 progress_cb=progress_cb,
             )
         elif source == "opencti":
             results["opencti"] = backfill_opencti(
-                settings, graph_store, run_store, checkpoints,
+                settings,
+                graph_store,
+                run_store,
+                checkpoints,
                 progress_cb=progress_cb,
             )
         else:
@@ -399,22 +429,28 @@ def get_backfill_status(checkpoints: CheckpointStore) -> Dict[str, Any]:
 
 # ── CLI entry point ──────────────────────────────────────────
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Wellspring historical backfill")
     parser.add_argument(
-        "--source", "-s",
+        "--source",
+        "-s",
         choices=["all", "feedly", "opencti"],
         default="all",
         help="Which source to backfill (default: all)",
     )
     parser.add_argument(
-        "--reset", action="store_true",
+        "--reset",
+        action="store_true",
         help="Wipe checkpoints and start from the beginning",
     )
     args = parser.parse_args()
 
     settings = get_settings()
-    logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=settings.log_level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
 
     graph_store = create_graph_store(settings)
     run_store = create_run_store(settings)
@@ -434,7 +470,10 @@ def main() -> None:
 
     t0 = time.monotonic()
     results = run_backfill(
-        settings, graph_store, run_store, checkpoints,
+        settings,
+        graph_store,
+        run_store,
+        checkpoints,
         sources=sources,
         reset=args.reset,
         progress_cb=_progress,

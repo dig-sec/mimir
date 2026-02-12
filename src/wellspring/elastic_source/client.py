@@ -1,4 +1,5 @@
 """Elasticsearch source client for document connector ingestion."""
+
 from __future__ import annotations
 
 from typing import Any, Callable, Dict, Iterator, List, Optional

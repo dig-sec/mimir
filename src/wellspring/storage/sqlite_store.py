@@ -163,7 +163,11 @@ def _row_to_run(row: sqlite3.Row) -> ExtractionRun:
 def _merge_attrs(existing: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
     merged = dict(existing)
     for key, value in incoming.items():
-        if key in merged and isinstance(merged[key], (int, float)) and isinstance(value, (int, float)):
+        if (
+            key in merged
+            and isinstance(merged[key], (int, float))
+            and isinstance(value, (int, float))
+        ):
             merged[key] = merged[key] + value
         else:
             merged[key] = value
@@ -335,7 +339,9 @@ class SQLiteGraphStore(GraphStore):
         self.conn.commit()
 
     def get_entity(self, entity_id: str) -> Optional[Entity]:
-        row = self.conn.execute("SELECT * FROM entities WHERE id = ?", (entity_id,)).fetchone()
+        row = self.conn.execute(
+            "SELECT * FROM entities WHERE id = ?", (entity_id,)
+        ).fetchone()
         if not row:
             return None
         return _row_to_entity(row)
@@ -416,7 +422,10 @@ class SQLiteGraphStore(GraphStore):
             "SELECT * FROM relations WHERE confidence >= ?", (min_confidence,)
         ).fetchall()
         return Subgraph(
-            nodes=[SubgraphNode(id=r["id"], name=r["name"], type=r["type"]) for r in ent_rows],
+            nodes=[
+                SubgraphNode(id=r["id"], name=r["name"], type=r["type"])
+                for r in ent_rows
+            ],
             edges=[
                 SubgraphEdge(
                     id=r["id"],
@@ -490,7 +499,9 @@ class SQLiteGraphStore(GraphStore):
         run_ids = {p.extraction_run_id for p in provenance}
         runs: List[ExtractionRun] = []
         for run_id in run_ids:
-            row = self.conn.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()
+            row = self.conn.execute(
+                "SELECT * FROM runs WHERE run_id = ?", (run_id,)
+            ).fetchone()
             if row:
                 runs.append(_row_to_run(row))
         return relation, provenance, runs
@@ -545,7 +556,9 @@ class SQLiteRunStore(RunStore):
         )
         self.conn.commit()
 
-    def update_run_status(self, run_id: str, status: str, error: Optional[str] = None) -> None:
+    def update_run_status(
+        self, run_id: str, status: str, error: Optional[str] = None
+    ) -> None:
         self.conn.execute(
             "UPDATE runs SET status = ?, error = ? WHERE run_id = ?",
             (status, error, run_id),
@@ -553,7 +566,9 @@ class SQLiteRunStore(RunStore):
         self.conn.commit()
 
     def get_run(self, run_id: str) -> Optional[ExtractionRun]:
-        row = self.conn.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()
+        row = self.conn.execute(
+            "SELECT * FROM runs WHERE run_id = ?", (run_id,)
+        ).fetchone()
         if not row:
             return None
         return _row_to_run(row)
@@ -594,7 +609,8 @@ class SQLiteRunStore(RunStore):
 
     def get_document(self, run_id: str) -> Optional[Dict[str, Any]]:
         row = self.conn.execute(
-            "SELECT source_uri, text, metadata FROM documents WHERE run_id = ?", (run_id,)
+            "SELECT source_uri, text, metadata FROM documents WHERE run_id = ?",
+            (run_id,),
         ).fetchone()
         if not row:
             return None

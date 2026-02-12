@@ -21,7 +21,11 @@ from wellspring.storage.base import GraphStore
 def _merge_attrs(existing: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
     merged = dict(existing)
     for key, value in incoming.items():
-        if key in merged and isinstance(merged[key], (int, float)) and isinstance(value, (int, float)):
+        if (
+            key in merged
+            and isinstance(merged[key], (int, float))
+            and isinstance(value, (int, float))
+        ):
             merged[key] = merged[key] + value
         else:
             merged[key] = value
@@ -169,31 +173,47 @@ class InMemoryGraphStore(GraphStore):
                     continue
                 if relation.subject_id in frontier or relation.object_id in frontier:
                     if source_uri:
-                        provenance_ids = self.provenance_by_relation.get(relation.id, [])
+                        provenance_ids = self.provenance_by_relation.get(
+                            relation.id, []
+                        )
                         if not any(
                             self.provenance_by_id[pid].source_uri == source_uri
                             and (
                                 since is None
-                                or _normalize_datetime(self.provenance_by_id[pid].timestamp) >= since
+                                or _normalize_datetime(
+                                    self.provenance_by_id[pid].timestamp
+                                )
+                                >= since
                             )
                             and (
                                 until is None
-                                or _normalize_datetime(self.provenance_by_id[pid].timestamp) <= until
+                                or _normalize_datetime(
+                                    self.provenance_by_id[pid].timestamp
+                                )
+                                <= until
                             )
                             for pid in provenance_ids
                             if pid in self.provenance_by_id
                         ):
                             continue
                     elif since or until:
-                        provenance_ids = self.provenance_by_relation.get(relation.id, [])
+                        provenance_ids = self.provenance_by_relation.get(
+                            relation.id, []
+                        )
                         if not any(
                             (
                                 since is None
-                                or _normalize_datetime(self.provenance_by_id[pid].timestamp) >= since
+                                or _normalize_datetime(
+                                    self.provenance_by_id[pid].timestamp
+                                )
+                                >= since
                             )
                             and (
                                 until is None
-                                or _normalize_datetime(self.provenance_by_id[pid].timestamp) <= until
+                                or _normalize_datetime(
+                                    self.provenance_by_id[pid].timestamp
+                                )
+                                <= until
                             )
                             for pid in provenance_ids
                             if pid in self.provenance_by_id

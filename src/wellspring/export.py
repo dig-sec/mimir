@@ -9,10 +9,10 @@ import zipfile
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-from .schemas import Subgraph, SubgraphEdge, SubgraphNode
-
+from .schemas import Subgraph, SubgraphNode
 
 # ── CSV (two CSVs in a ZIP) ──────────────────────────────────────────────
+
 
 def export_csv_zip(subgraph: Subgraph) -> bytes:
     """Return a ZIP archive containing entities.csv and relations.csv."""
@@ -29,19 +29,30 @@ def export_csv_zip(subgraph: Subgraph) -> bytes:
         # relations.csv
         rel_io = io.StringIO()
         rw = csv.writer(rel_io)
-        rw.writerow(["id", "source_id", "source_name", "predicate",
-                      "target_id", "target_name", "confidence"])
+        rw.writerow(
+            [
+                "id",
+                "source_id",
+                "source_name",
+                "predicate",
+                "target_id",
+                "target_name",
+                "confidence",
+            ]
+        )
         name_map = {n.id: n.name for n in subgraph.nodes}
         for e in sorted(subgraph.edges, key=lambda e: e.predicate):
-            rw.writerow([
-                e.id,
-                e.subject_id,
-                name_map.get(e.subject_id, e.subject_id),
-                e.predicate,
-                e.object_id,
-                name_map.get(e.object_id, e.object_id),
-                f"{e.confidence:.2f}",
-            ])
+            rw.writerow(
+                [
+                    e.id,
+                    e.subject_id,
+                    name_map.get(e.subject_id, e.subject_id),
+                    e.predicate,
+                    e.object_id,
+                    name_map.get(e.object_id, e.object_id),
+                    f"{e.confidence:.2f}",
+                ]
+            )
         zf.writestr("relations.csv", rel_io.getvalue())
 
     return buf.getvalue()
@@ -57,17 +68,32 @@ def export_graphml(subgraph: Subgraph) -> str:
     root = ET.Element("graphml", xmlns=_GRAPHML_NS)
 
     # attribute declarations
-    ET.SubElement(root, "key", id="label", attrib={
-        "for": "node", "attr.name": "label", "attr.type": "string"})
-    ET.SubElement(root, "key", id="type", attrib={
-        "for": "node", "attr.name": "type", "attr.type": "string"})
-    ET.SubElement(root, "key", id="predicate", attrib={
-        "for": "edge", "attr.name": "predicate", "attr.type": "string"})
-    ET.SubElement(root, "key", id="confidence", attrib={
-        "for": "edge", "attr.name": "confidence", "attr.type": "double"})
+    ET.SubElement(
+        root,
+        "key",
+        id="label",
+        attrib={"for": "node", "attr.name": "label", "attr.type": "string"},
+    )
+    ET.SubElement(
+        root,
+        "key",
+        id="type",
+        attrib={"for": "node", "attr.name": "type", "attr.type": "string"},
+    )
+    ET.SubElement(
+        root,
+        "key",
+        id="predicate",
+        attrib={"for": "edge", "attr.name": "predicate", "attr.type": "string"},
+    )
+    ET.SubElement(
+        root,
+        "key",
+        id="confidence",
+        attrib={"for": "edge", "attr.name": "confidence", "attr.type": "double"},
+    )
 
-    graph = ET.SubElement(root, "graph", id="G",
-                          edgedefault="directed")
+    graph = ET.SubElement(root, "graph", id="G", edgedefault="directed")
 
     for n in subgraph.nodes:
         node_el = ET.SubElement(graph, "node", id=n.id)
@@ -77,8 +103,9 @@ def export_graphml(subgraph: Subgraph) -> str:
         d_type.text = n.type or ""
 
     for e in subgraph.edges:
-        edge_el = ET.SubElement(graph, "edge", id=e.id,
-                                source=e.subject_id, target=e.object_id)
+        edge_el = ET.SubElement(
+            graph, "edge", id=e.id, source=e.subject_id, target=e.object_id
+        )
         d_pred = ET.SubElement(edge_el, "data", key="predicate")
         d_pred.text = e.predicate
         d_conf = ET.SubElement(edge_el, "data", key="confidence")
@@ -89,6 +116,7 @@ def export_graphml(subgraph: Subgraph) -> str:
 
 
 # ── Plain JSON knowledge-graph ───────────────────────────────────────────
+
 
 def export_json(subgraph: Subgraph) -> Dict[str, Any]:
     """Return a self-contained JSON-friendly dict of the knowledge graph."""
@@ -119,13 +147,16 @@ def export_json(subgraph: Subgraph) -> Dict[str, Any]:
 
 # ── Markdown report ──────────────────────────────────────────────────────
 
+
 def export_markdown(subgraph: Subgraph) -> str:
     """Return a human-readable Markdown report of the knowledge graph."""
     name_map = {n.id: n.name for n in subgraph.nodes}
     lines: List[str] = []
     lines.append("# Wellspring — Knowledge Graph Export")
     lines.append("")
-    lines.append(f"**Exported:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+    lines.append(
+        f"**Exported:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
+    )
     lines.append(f"**Entities:** {len(subgraph.nodes)}  ")
     lines.append(f"**Relations:** {len(subgraph.edges)}")
     lines.append("")
@@ -151,7 +182,9 @@ def export_markdown(subgraph: Subgraph) -> str:
     lines.append("")
     lines.append("| Source | Predicate | Target | Confidence |")
     lines.append("|--------|-----------|--------|------------|")
-    for e in sorted(subgraph.edges, key=lambda e: (e.predicate, name_map.get(e.subject_id, ""))):
+    for e in sorted(
+        subgraph.edges, key=lambda e: (e.predicate, name_map.get(e.subject_id, ""))
+    ):
         src = name_map.get(e.subject_id, e.subject_id)
         tgt = name_map.get(e.object_id, e.object_id)
         lines.append(f"| {src} | {e.predicate} | {tgt} | {e.confidence:.2f} |")

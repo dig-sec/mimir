@@ -15,15 +15,17 @@ Design goals
 * **Non-blocking**: every public function is synchronous and designed to
   run inside ``asyncio.to_thread()``.
 """
+
 from __future__ import annotations
 
-import html
 import hashlib
+import html
 import logging
 import re
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 from uuid import UUID, uuid4, uuid5
 
 from elasticsearch import Elasticsearch
@@ -58,18 +60,19 @@ def _det_prov_id(
     )
     return str(uuid5(_NS_PROVENANCE, material))
 
-# ── Feedly entity-type → Wellspring entity-type ──────────────
+
+# ── Feedly entity-type → Wellspring entity-type (STIX 2.1 aligned) ──
 _FEEDLY_TYPE_MAP: Dict[str, str] = {
-    "threatActor": "threat_actor",
-    "malwareFamily": "malware",
-    "mitreAttack": "attack_pattern",
-    "consumerGood": "tool",
-    "technology": "tool",
-    "org": "identity",
-    "publisher": "identity",
-    "location": "location",
-    "vulnerability": "vulnerability",
-    "person": "identity",
+    "threatActor": "threat_actor",  # STIX: threat-actor
+    "malwareFamily": "malware",  # STIX: malware
+    "mitreAttack": "attack_pattern",  # STIX: attack-pattern
+    "vulnerability": "vulnerability",  # STIX: vulnerability
+    "org": "identity",  # STIX: identity
+    "person": "identity",  # STIX: identity
+    "location": "location",  # STIX: location
+    # consumerGood / technology: routed by _route_consumer_good()
+    # publisher: skipped (noise — source is already in feed_name)
+    # other: skipped
 }
 
 # IOC type → Wellspring entity type
@@ -82,6 +85,141 @@ _IOC_TYPE_MAP: Dict[str, str] = {
     "cve": "vulnerability",
     "filename": "indicator",
 }
+
+# ── Platform keywords for consumerGood routing ───────────────
+_PLATFORM_KEYWORDS = frozenset(
+    {
+        "windows",
+        "linux",
+        "android",
+        "ios",
+        "macos",
+        "mac os",
+        "ubuntu",
+        "debian",
+        "centos",
+        "red hat",
+        "rhel",
+        "fedora",
+        "freebsd",
+        "chromeos",
+        "chrome os",
+        "unix",
+        "solaris",
+        "aix",
+        "vmware esxi",
+        "esxi",
+    }
+)
+
+# Generic labels that are never CTI-relevant entities
+_NOISE_LABELS = frozenset(
+    {
+        "inside",
+        "outside",
+        "top",
+        "free",
+        "best",
+        "new",
+        "first",
+        "end",
+        "start",
+        "smart",
+        "next",
+        "open",
+        "custom",
+        "advanced",
+        "simple",
+        "modern",
+        "global",
+        "latest",
+        "unknown",
+        "december",
+        "january",
+        "february",
+        "march",
+        "april",
+        "may",
+        "june",
+        "july",
+        "august",
+        "september",
+        "october",
+        "november",
+    }
+)
+
+# MITRE labels that are meta-noise, not actual technique/tactic
+_MITRE_NOISE_LABELS = frozenset(
+    {
+        "tactics and techniques",
+        "tactics",
+        "techniques",
+        "mitre att&ck",
+        "mitre attack",
+        "enterprise",
+        "initial access",
+        "execution",
+        "persistence",
+    }
+)
+
+_MITRE_ID_RE = re.compile(r"[TtSs]\d{4}(?:\.\d{3})?|TA\d{4}")
+
+# ── STIX 2.1 SRO cross-link rules: (subject_type, object_type, predicate)
+_CROSS_LINK_RULES: List[Tuple[str, str, str]] = [
+    ("threat_actor", "malware", "uses"),
+    ("threat_actor", "attack_pattern", "uses"),
+    ("threat_actor", "tool", "uses"),
+    ("threat_actor", "identity", "targets"),
+    ("threat_actor", "infrastructure", "targets"),
+    ("threat_actor", "vulnerability", "targets"),
+    ("threat_actor", "location", "located_at"),
+    ("malware", "attack_pattern", "uses"),
+    ("malware", "vulnerability", "exploits"),
+    ("malware", "infrastructure", "targets"),
+    ("malware", "tool", "uses"),
+    ("malware", "identity", "targets"),
+    ("tool", "vulnerability", "exploits"),
+    ("tool", "attack_pattern", "uses"),
+]
+
+
+def _route_consumer_good(label: str) -> Optional[str]:
+    """Route Feedly consumerGood to infrastructure (platform) or tool."""
+    lower = label.lower().strip()
+    if lower in _NOISE_LABELS or len(lower) < 3:
+        return None
+    for kw in _PLATFORM_KEYWORDS:
+        if kw in lower:
+            return "infrastructure"
+    return "tool"
+
+
+def _is_noise_mitre(label: str) -> bool:
+    """Return True if a MITRE ATT&CK label is meta-noise."""
+    return label.lower().strip() in _MITRE_NOISE_LABELS
+
+
+def _is_noise_entity(label: str) -> bool:
+    """Return True if label is too generic to be a real CTI entity."""
+    lower = label.lower().strip()
+    return lower in _NOISE_LABELS or len(lower) < 2
+
+
+def _extract_mitre_id(label: str) -> Optional[str]:
+    """Extract MITRE ATT&CK ID (e.g. T1486, TA0005) from a label."""
+    m = _MITRE_ID_RE.search(label)
+    return m.group(0).upper() if m else None
+
+
+def _salience_confidence(fe: Dict[str, Any]) -> float:
+    """Compute confidence from Feedly salience and disambiguation."""
+    base = 0.90 if fe.get("salienceLevel") == "about" else 0.65
+    if fe.get("disambiguated"):
+        base = min(base + 0.05, 1.0)
+    return round(base, 2)
+
 
 _STRIP_HTML_RE = re.compile(r"<[^>]+>")
 _MULTI_WS_RE = re.compile(r"\s{2,}")
@@ -120,6 +258,7 @@ def _iso_to_dt(value: Any) -> Optional[datetime]:
 
 # ── Results ──────────────────────────────────────────────────
 
+
 @dataclass
 class FeedlySyncResult:
     articles_processed: int = 0
@@ -131,6 +270,7 @@ class FeedlySyncResult:
 
 
 # ── Core sync logic ─────────────────────────────────────────
+
 
 def sync_feedly_index(
     settings: Settings,
@@ -176,6 +316,7 @@ def sync_feedly_index(
 
     if since is None:
         from datetime import timedelta
+
         since = datetime.now(timezone.utc) - timedelta(
             minutes=settings.elastic_connector_lookback_minutes
         )
@@ -189,6 +330,7 @@ def sync_feedly_index(
     # Use bulk_mode if available (ElasticGraphStore) to avoid per-write
     # refresh=wait_for — improves throughput ~30-60x for batch imports.
     import contextlib
+
     bulk_ctx = (
         graph_store.bulk_mode()
         if hasattr(graph_store, "bulk_mode")
@@ -197,14 +339,22 @@ def sync_feedly_index(
 
     try:
         with bulk_ctx:
-            for i, doc in enumerate(_iter_feedly_docs(client, index_name, since, settings, until=until)):
+            for i, doc in enumerate(
+                _iter_feedly_docs(client, index_name, since, settings, until=until)
+            ):
                 if max_articles and i >= max_articles:
                     break
 
                 try:
                     _process_article(
-                        doc, graph_store, resolver, run_store, settings,
-                        sync_run_id, result, queue_for_llm,
+                        doc,
+                        graph_store,
+                        resolver,
+                        run_store,
+                        settings,
+                        sync_run_id,
+                        result,
+                        queue_for_llm,
                     )
                 except Exception as exc:
                     title = doc.get("entry", {}).get("title", "?")[:60]
@@ -223,9 +373,12 @@ def sync_feedly_index(
 
     logger.info(
         "Feedly sync complete: %d articles, %d entities, %d relations, %d IOCs, %d queued, %d errors",
-        result.articles_processed, result.entities_created,
-        result.relations_created, result.iocs_created,
-        result.articles_queued_for_llm, len(result.errors),
+        result.articles_processed,
+        result.entities_created,
+        result.relations_created,
+        result.iocs_created,
+        result.articles_queued_for_llm,
+        len(result.errors),
     )
     return result
 
@@ -278,17 +431,27 @@ def _iter_feedly_docs(
             "sort": sort,
             "size": page_size,
             "_source": [
-                "entry.id", "entry.title",
-                "entry.content.content", "entry.summary.content",
-                "entry.fullContent", "entry.abstract.text",
-                "entry.entities", "entry.commonTopics",
+                "entry.id",
+                "entry.title",
+                "entry.content.content",
+                "entry.summary.content",
+                "entry.fullContent",
+                "entry.abstract.text",
+                "entry.entities",
+                "entry.commonTopics",
                 "entry.indicatorsOfCompromise",
-                "entry.published", "entry.canonicalUrl",
-                "entry.alternate.href", "entry.origin.title",
-                "entry.author", "entry.language",
-                "entry.keywords", "entry.categories",
+                "entry.published",
+                "entry.canonicalUrl",
+                "entry.alternate.href",
+                "entry.origin.title",
+                "entry.author",
+                "entry.language",
+                "entry.keywords",
+                "entry.categories",
                 "entry.leoSummary",
-                "feed_name", "fetched_at", "entry_id",
+                "feed_name",
+                "fetched_at",
+                "entry_id",
             ],
         }
         if search_after:
@@ -305,6 +468,86 @@ def _iter_feedly_docs(
         search_after = hits[-1]["sort"]
 
 
+def _create_cross_links(
+    entities_by_type: Dict[str, list],
+    entity_salience: Dict[str, str],
+    graph_store: GraphStore,
+    source_uri: str,
+    sync_run_id: str,
+    published_dt: datetime,
+    title: str,
+    result: FeedlySyncResult,
+) -> None:
+    """Create STIX 2.1 SRO cross-links between co-occurring entities.
+
+    Uses the ``_CROSS_LINK_RULES`` table to generate entity-to-entity
+    relationships (e.g. threat_actor ``uses`` malware) when both entities
+    appear in the same article.  At least one entity must have salience
+    "about" to avoid noisy mention×mention links.
+    """
+    for subj_type, obj_type, predicate in _CROSS_LINK_RULES:
+        subjects = entities_by_type.get(subj_type, [])
+        objects = entities_by_type.get(obj_type, [])
+
+        for subj in subjects:
+            for obj in objects:
+                if subj.id == obj.id:
+                    continue
+
+                subj_sal = entity_salience.get(subj.id, "mention")
+                obj_sal = entity_salience.get(obj.id, "mention")
+
+                # Require at least one "about"-level entity
+                if subj_sal != "about" and obj_sal != "about":
+                    continue
+
+                # Confidence reflects co-occurrence strength
+                if subj_sal == "about" and obj_sal == "about":
+                    confidence = 0.80
+                else:
+                    confidence = 0.65
+
+                rel = Relation(
+                    id=str(uuid4()),
+                    subject_id=subj.id,
+                    predicate=predicate,
+                    object_id=obj.id,
+                    confidence=confidence,
+                    attrs={
+                        "origin": "feedly",
+                        "inference": "co-occurrence",
+                        "source_article": title[:200],
+                    },
+                )
+                stored = graph_store.upsert_relations([rel])[0]
+                snippet = (
+                    f"Co-occurrence: {subj.name} {predicate} "
+                    f"{obj.name} in: {title[:80]}"
+                )
+                prov = Provenance(
+                    provenance_id=_det_prov_id(
+                        source_uri=source_uri,
+                        relation_id=stored.id,
+                        model="feedly-co-occurrence",
+                        chunk_id=stored.id,
+                        start_offset=0,
+                        end_offset=0,
+                        snippet=snippet,
+                    ),
+                    source_uri=source_uri,
+                    chunk_id=stored.id,
+                    start_offset=0,
+                    end_offset=0,
+                    snippet=snippet,
+                    extraction_run_id=sync_run_id,
+                    model="feedly-co-occurrence",
+                    prompt_version="feedly-crosslink-v1",
+                    timestamp=published_dt,
+                )
+                graph_store.attach_provenance(stored.id, prov)
+                result.relations_created += 1
+
+
 def _process_article(
     doc: Dict[str, Any],
     graph_store: GraphStore,
@@ -315,14 +558,21 @@ def _process_article(
     result: FeedlySyncResult,
     queue_for_llm: bool,
 ) -> None:
-    """Process a single Feedly article into graph data."""
+    """Process a single Feedly article into STIX 2.1-aligned graph data.
+
+    Creates:
+    - A ``report`` entity for the article
+    - Typed CTI entities (threat_actor, malware, attack_pattern, …)
+    - Report → ``mentions`` → Entity relations
+    - Entity ↔ Entity cross-links using STIX SRO predicates
+    - IOC entities with ``contains_ioc`` relations
+    """
     entry = doc.get("entry", {})
     result.articles_processed += 1
 
     title = entry.get("title", "").strip()
     feed_name = doc.get("feed_name", "")
     published_dt = _epoch_ms_to_dt(entry.get("published")) or datetime.now(timezone.utc)
-    fetched_at = _iso_to_dt(doc.get("fetched_at")) or datetime.now(timezone.utc)
 
     # Build source URI from canonical URL or entry ID
     canonical_url = entry.get("canonicalUrl", "")
@@ -332,7 +582,11 @@ def _process_article(
             canonical_url = alt_links[0].get("href", "")
         elif isinstance(alt_links, dict):
             canonical_url = alt_links.get("href", "")
-    source_uri = f"feedly://{canonical_url}" if canonical_url else f"feedly://{entry.get('id', uuid4())}"
+    source_uri = (
+        f"feedly://{canonical_url}"
+        if canonical_url
+        else f"feedly://{entry.get('id', uuid4())}"
+    )
 
     # ── Extract article text ─────────────────────────────────
     text_parts = []
@@ -347,10 +601,14 @@ def _process_article(
         else:
             continue
         if raw:
-            text_parts.append(_strip_html(raw) if settings.elastic_connector_strip_html else raw)
+            text_parts.append(
+                _strip_html(raw) if settings.elastic_connector_strip_html else raw
+            )
     if entry.get("fullContent"):
         text_parts.append(
-            _strip_html(entry["fullContent"]) if settings.elastic_connector_strip_html else entry["fullContent"]
+            _strip_html(entry["fullContent"])
+            if settings.elastic_connector_strip_html
+            else entry["fullContent"]
         )
     if entry.get("abstract", {}).get("text"):
         text_parts.append(entry["abstract"]["text"])
@@ -365,38 +623,75 @@ def _process_article(
     graph_store.upsert_entities([article_entity])
     result.entities_created += 1
 
-    # ── Process Feedly AI entities ───────────────────────────
+    # ── Process Feedly AI entities (STIX 2.1 aligned) ──────────
+    entities_by_type: Dict[str, list] = defaultdict(list)
+    entity_salience: Dict[str, str] = {}
+
     for fe in entry.get("entities", []):
         label = fe.get("label", "").strip()
-        if not label:
+        if not label or _is_noise_entity(label):
             continue
+
         feedly_type = fe.get("type", "other")
-        ws_type = _FEEDLY_TYPE_MAP.get(feedly_type)
+        feedly_id = fe.get("id", "")
+
+        # Detect CVEs by id prefix when type field is missing
+        if feedly_type == "other" and feedly_id.startswith("vulnerability/"):
+            feedly_type = "vulnerability"
+
+        # Smart type routing
+        if feedly_type in ("consumerGood", "technology"):
+            ws_type = _route_consumer_good(label)
+        elif feedly_type == "mitreAttack":
+            ws_type = None if _is_noise_mitre(label) else "attack_pattern"
+        else:
+            ws_type = _FEEDLY_TYPE_MAP.get(feedly_type)
+
         if not ws_type:
-            continue  # skip unmapped types (disease, gene, etc.)
+            continue
 
         entity = resolver.resolve(label, entity_type=ws_type)
         entity.attrs["feedly_id"] = fe.get("id", "")
         entity.attrs["origin"] = "feedly"
+
+        # Attach MITRE ATT&CK ID as attribute
+        if feedly_type == "mitreAttack":
+            mitre_id = _extract_mitre_id(label)
+            if mitre_id:
+                entity.attrs["mitre_id"] = mitre_id
+
+        # Attach CVE vulnerability metadata
+        vuln_info = fe.get("vulnerabilityInfo")
+        if vuln_info and ws_type == "vulnerability":
+            if vuln_info.get("cvssScore") is not None:
+                entity.attrs["cvss_score"] = vuln_info["cvssScore"]
+            if vuln_info.get("hasExploit") is not None:
+                entity.attrs["has_exploit"] = vuln_info["hasExploit"]
+            if vuln_info.get("hasPatch") is not None:
+                entity.attrs["has_patch"] = vuln_info["hasPatch"]
+
         graph_store.upsert_entities([entity])
         result.entities_created += 1
 
-        # Relation: article → mentions → entity
+        # Track for cross-linking
         salience = fe.get("salienceLevel", "mention")
-        predicate = "mentions" if salience == "mention" else "describes"
-        confidence = 0.9 if salience == "about" else 0.6
+        entities_by_type[ws_type].append(entity)
+        entity_salience[entity.id] = salience
+
+        # Report → mentions → Entity (salience-based confidence)
+        confidence = _salience_confidence(fe)
 
         rel = Relation(
             id=str(uuid4()),
             subject_id=article_entity.id,
-            predicate=predicate,
+            predicate="mentions",
             object_id=entity.id,
             confidence=confidence,
             attrs={"origin": "feedly", "salience": salience},
         )
         stored = graph_store.upsert_relations([rel])[0]
         chunk_id = str(fe.get("id", stored.id))
-        snippet = f"Feedly: {title[:100]} -> {label}"
+        snippet = f"Feedly: {title[:100]} \u2192 {label}"
         prov = Provenance(
             provenance_id=_det_prov_id(
                 source_uri=source_uri,
@@ -409,20 +704,21 @@ def _process_article(
             ),
             source_uri=source_uri,
             chunk_id=chunk_id,
-            start_offset=0, end_offset=0,
+            start_offset=0,
+            end_offset=0,
             snippet=snippet,
             extraction_run_id=sync_run_id,
             model="feedly-ai",
-            prompt_version="feedly-entities",
+            prompt_version="feedly-entities-v2",
             timestamp=published_dt,
         )
         graph_store.attach_provenance(stored.id, prov)
         result.relations_created += 1
 
-        # Process entity causes (Feedly's inferred relationships)
+        # Process Feedly "causes" (inferred relationships)
         for cause in fe.get("causes", []):
             cause_label = cause.get("label", "").strip()
-            if not cause_label:
+            if not cause_label or _is_noise_entity(cause_label):
                 continue
             cause_entity = resolver.resolve(cause_label, entity_type=ws_type)
             cause_entity.attrs["origin"] = "feedly"
@@ -432,78 +728,119 @@ def _process_article(
             cause_rel = Relation(
                 id=str(uuid4()),
                 subject_id=entity.id,
-                predicate="associated_with",
+                predicate="related_to",
                 object_id=cause_entity.id,
-                confidence=0.7,
+                confidence=0.70,
                 attrs={"origin": "feedly", "relationship": "causes"},
             )
             stored_cause = graph_store.upsert_relations([cause_rel])[0]
             cause_chunk_id = str(cause.get("id", stored_cause.id))
-            cause_snippet = f"Feedly entity cause: {label} <- {cause_label}"
-            graph_store.attach_provenance(stored_cause.id, Provenance(
-                provenance_id=_det_prov_id(
+            cause_snippet = f"Feedly cause: {label} \u2192 {cause_label}"
+            graph_store.attach_provenance(
+                stored_cause.id,
+                Provenance(
+                    provenance_id=_det_prov_id(
+                        source_uri=source_uri,
+                        relation_id=stored_cause.id,
+                        model="feedly-ai",
+                        chunk_id=cause_chunk_id,
+                        start_offset=0,
+                        end_offset=0,
+                        snippet=cause_snippet,
+                    ),
                     source_uri=source_uri,
-                    relation_id=stored_cause.id,
-                    model="feedly-ai",
                     chunk_id=cause_chunk_id,
                     start_offset=0,
                     end_offset=0,
                     snippet=cause_snippet,
+                    extraction_run_id=sync_run_id,
+                    model="feedly-ai",
+                    prompt_version="feedly-entities-v2",
+                    timestamp=published_dt,
                 ),
-                source_uri=source_uri,
-                chunk_id=cause_chunk_id,
-                start_offset=0, end_offset=0,
-                snippet=cause_snippet,
-                extraction_run_id=sync_run_id,
-                model="feedly-ai",
-                prompt_version="feedly-entities",
-                timestamp=published_dt,
-            ))
+            )
             result.relations_created += 1
 
-    # ── Process Feedly common topics ─────────────────────────
+    # ── Parse structured topic metadata (vendor/product only) ──
+    # Skip generic topics (Cyber Security, Malware, etc.) — they add
+    # no traversal value.  Only promote VulnDB-style "vendor: X" and
+    # "product: X" labels into proper Identity / Tool entities.
     for topic in entry.get("commonTopics", []):
         topic_label = topic.get("label", "").strip()
         if not topic_label:
             continue
-        # map topic to a generic "topic" entity
-        topic_entity = resolver.resolve(topic_label, entity_type="topic")
-        topic_entity.attrs["origin"] = "feedly"
-        graph_store.upsert_entities([topic_entity])
+
+        lower = topic_label.lower()
+        entity = None
+
+        if lower.startswith("vendor: "):
+            vendor_name = topic_label[8:].strip()
+            if vendor_name and len(vendor_name) > 1:
+                entity = resolver.resolve(vendor_name, entity_type="identity")
+                entity.attrs["identity_class"] = "organization"
+        elif lower.startswith("product: "):
+            product_name = topic_label[9:].strip()
+            if product_name and len(product_name) > 1:
+                entity = resolver.resolve(product_name, entity_type="tool")
+        else:
+            continue  # skip Cyber Security, Malware, All vulnerabilities, etc.
+
+        if not entity:
+            continue
+
+        entity.attrs["origin"] = "feedly"
+        graph_store.upsert_entities([entity])
         result.entities_created += 1
 
-        score = topic.get("score", 0)
+        entities_by_type[entity.type].append(entity)
+        entity_salience[entity.id] = "about"
+
         rel = Relation(
             id=str(uuid4()),
             subject_id=article_entity.id,
-            predicate="tagged_with",
-            object_id=topic_entity.id,
-            confidence=min(float(score), 1.0) if isinstance(score, (int, float)) and score <= 1.0 else 0.8,
-            attrs={"origin": "feedly", "topic_score": score},
+            predicate="mentions",
+            object_id=entity.id,
+            confidence=0.85,
+            attrs={"origin": "feedly", "topic_source": "vuln_metadata"},
         )
-        stored = graph_store.upsert_relations([rel])[0]
-        topic_chunk_id = str(stored.id)
-        topic_snippet = f"Feedly topic: {title[:80]} tagged {topic_label}"
-        graph_store.attach_provenance(stored.id, Provenance(
-            provenance_id=_det_prov_id(
+        stored_topic = graph_store.upsert_relations([rel])[0]
+        topic_snippet = f"VulnDB metadata: {title[:80]} \u2192 {entity.name}"
+        graph_store.attach_provenance(
+            stored_topic.id,
+            Provenance(
+                provenance_id=_det_prov_id(
+                    source_uri=source_uri,
+                    relation_id=stored_topic.id,
+                    model="feedly-ai",
+                    chunk_id=stored_topic.id,
+                    start_offset=0,
+                    end_offset=0,
+                    snippet=topic_snippet,
+                ),
                 source_uri=source_uri,
-                relation_id=stored.id,
-                model="feedly-ai",
-                chunk_id=topic_chunk_id,
+                chunk_id=stored_topic.id,
                 start_offset=0,
                 end_offset=0,
                 snippet=topic_snippet,
+                extraction_run_id=sync_run_id,
+                model="feedly-ai",
+                prompt_version="feedly-vuln-metadata",
+                timestamp=published_dt,
             ),
-            source_uri=source_uri,
-            chunk_id=topic_chunk_id,
-            start_offset=0, end_offset=0,
-            snippet=topic_snippet,
-            extraction_run_id=sync_run_id,
-            model="feedly-ai",
-            prompt_version="feedly-topics",
-            timestamp=published_dt,
-        ))
+        )
         result.relations_created += 1
+
+    # ── Entity-to-entity cross-links (STIX 2.1 SRO vocabulary) ──
+    _create_cross_links(
+        entities_by_type,
+        entity_salience,
+        graph_store,
+        source_uri,
+        sync_run_id,
+        published_dt,
+        title,
+        result,
+    )
 
     # ── Process IOC mentions ─────────────────────────────────
     ioc_data = entry.get("indicatorsOfCompromise", {})
@@ -534,70 +871,39 @@ def _process_article(
         stored = graph_store.upsert_relations([rel])[0]
         ioc_chunk_id = str(stored.id)
         ioc_snippet = f"Feedly IOC: {ioc_type} {ioc_text[:80]}"
-        graph_store.attach_provenance(stored.id, Provenance(
-            provenance_id=_det_prov_id(
+        graph_store.attach_provenance(
+            stored.id,
+            Provenance(
+                provenance_id=_det_prov_id(
+                    source_uri=source_uri,
+                    relation_id=stored.id,
+                    model="feedly-ai",
+                    chunk_id=ioc_chunk_id,
+                    start_offset=0,
+                    end_offset=0,
+                    snippet=ioc_snippet,
+                ),
                 source_uri=source_uri,
-                relation_id=stored.id,
-                model="feedly-ai",
                 chunk_id=ioc_chunk_id,
                 start_offset=0,
                 end_offset=0,
                 snippet=ioc_snippet,
-            ),
-            source_uri=source_uri,
-            chunk_id=ioc_chunk_id,
-            start_offset=0, end_offset=0,
-            snippet=ioc_snippet,
-            extraction_run_id=sync_run_id,
-            model="feedly-ai",
-            prompt_version="feedly-ioc",
-            timestamp=published_dt,
-        ))
-        result.relations_created += 1
-
-    # ── Process keywords as lightweight tags ──────────────────
-    for kw in entry.get("keywords", []):
-        if not isinstance(kw, str) or len(kw) < 2:
-            continue
-        kw_entity = resolver.resolve(kw.lower(), entity_type="topic")
-        kw_entity.attrs["origin"] = "feedly"
-        graph_store.upsert_entities([kw_entity])
-        result.entities_created += 1
-
-        rel = Relation(
-            id=str(uuid4()),
-            subject_id=article_entity.id,
-            predicate="tagged_with",
-            object_id=kw_entity.id,
-            confidence=0.5,
-            attrs={"origin": "feedly", "tag_source": "keyword"},
-        )
-        stored = graph_store.upsert_relations([rel])[0]
-        kw_chunk_id = str(stored.id)
-        kw_snippet = f"Feedly keyword: {kw}"
-        graph_store.attach_provenance(stored.id, Provenance(
-            provenance_id=_det_prov_id(
-                source_uri=source_uri,
-                relation_id=stored.id,
+                extraction_run_id=sync_run_id,
                 model="feedly-ai",
-                chunk_id=kw_chunk_id,
-                start_offset=0,
-                end_offset=0,
-                snippet=kw_snippet,
+                prompt_version="feedly-ioc",
+                timestamp=published_dt,
             ),
-            source_uri=source_uri,
-            chunk_id=kw_chunk_id,
-            start_offset=0, end_offset=0,
-            snippet=kw_snippet,
-            extraction_run_id=sync_run_id,
-            model="feedly-ai",
-            prompt_version="feedly-keywords",
-            timestamp=published_dt,
-        ))
+        )
         result.relations_created += 1
+
+    # ── Keywords: skipped (created noise topic entities with 0.5 conf) ──
 
     # ── Optionally queue for LLM extraction ──────────────────
-    if queue_for_llm and run_store and len(full_text) > settings.elastic_connector_min_text_chars:
+    if (
+        queue_for_llm
+        and run_store
+        and len(full_text) > settings.elastic_connector_min_text_chars
+    ):
         run_id = str(uuid4())
         run = ExtractionRun(
             run_id=run_id,
@@ -612,7 +918,9 @@ def _process_article(
             error=None,
         )
         run_store.create_run(
-            run, source_uri, full_text,
+            run,
+            source_uri,
+            full_text,
             {
                 "source": "feedly",
                 "feed_name": feed_name,

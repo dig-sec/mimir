@@ -1,5 +1,5 @@
-from wellspring.schemas import Entity, Relation
 from tests.in_memory_graph_store import InMemoryGraphStore
+from wellspring.schemas import Entity, Relation
 
 
 def test_relation_merge_sums_numeric_attrs():

@@ -1,4 +1,8 @@
-from wellspring.normalize import canonical_entity_key, normalize_entity_name, normalize_predicate
+from wellspring.normalize import (
+    canonical_entity_key,
+    normalize_entity_name,
+    normalize_predicate,
+)
 
 
 def test_normalize_predicate():

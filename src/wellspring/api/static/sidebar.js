@@ -2,14 +2,30 @@ import { toast } from './helpers.js';
 
 /* ── tab switching ─────────────────────── */
 export function initTabs() {
+  const sidebar    = document.querySelector('.sidebar');
+  const graphArea  = document.querySelector('.graph-area');
+  const pirDash    = document.getElementById('pirDashboard');
+
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-      const name = btn.dataset.tab.charAt(0).toUpperCase() + btn.dataset.tab.slice(1);
-      document.getElementById('panel' + name).classList.add('active');
 
+      const tab = btn.dataset.tab;
+      if (tab === 'pir') {
+        /* full-width PIR dashboard */
+        sidebar.style.display   = 'none';
+        graphArea.style.display = 'none';
+        if (pirDash) pirDash.style.display = '';
+      } else {
+        /* normal sidebar + graph */
+        sidebar.style.display   = '';
+        graphArea.style.display = '';
+        if (pirDash) pirDash.style.display = 'none';
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        const name = tab.charAt(0).toUpperCase() + tab.slice(1);
+        document.getElementById('panel' + name)?.classList.add('active');
+      }
     });
   });
 }

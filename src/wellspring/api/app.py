@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from ..config import get_settings
-from .routes import router, graph_store, run_store
+from .routes import graph_store, router, run_store
 from .scheduler import run_sync_loop
 
 settings = get_settings()

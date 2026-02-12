@@ -1,9 +1,9 @@
 """Background task manager for long-running operations."""
+
 from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum

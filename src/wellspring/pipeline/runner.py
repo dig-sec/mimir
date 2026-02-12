@@ -37,6 +37,7 @@ def _det_prov_id(
     )
     return str(uuid5(_NS_PROVENANCE, material))
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -200,7 +201,9 @@ async def process_run(
     if settings.max_chunks_per_run and len(chunks) > settings.max_chunks_per_run:
         logger.info(
             "Run %s: capping %d chunks to %d",
-            run_id, len(chunks), settings.max_chunks_per_run,
+            run_id,
+            len(chunks),
+            settings.max_chunks_per_run,
         )
         chunks = chunks[: settings.max_chunks_per_run]
     run_store.store_chunks(run_id, chunks)

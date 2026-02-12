@@ -3,15 +3,11 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
-from uuid import UUID, uuid4, uuid5
+from uuid import UUID, uuid5
 
 from elasticsearch import ApiError, ConflictError, Elasticsearch, NotFoundError
 
 from ..normalize import canonical_entity_key
-
-# Namespace UUID for deterministic entity/relation IDs
-_NS_ENTITY = UUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
-_NS_RELATION = UUID("b2c3d4e5-f6a7-8901-bcde-f12345678901")
 from ..schemas import (
     Chunk,
     Entity,
@@ -25,6 +21,10 @@ from ..schemas import (
 from .base import GraphStore
 from .metrics_store import MetricsStore
 from .run_store import RunStore
+
+# Namespace UUID for deterministic entity/relation IDs
+_NS_ENTITY = UUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+_NS_RELATION = UUID("b2c3d4e5-f6a7-8901-bcde-f12345678901")
 
 
 def _parse_datetime(value: Any) -> datetime:
@@ -49,14 +49,20 @@ def _normalize_datetime(value: Optional[datetime]) -> Optional[str]:
 def _merge_attrs(existing: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:
     merged = dict(existing)
     for key, value in incoming.items():
-        if key in merged and isinstance(merged[key], (int, float)) and isinstance(value, (int, float)):
+        if (
+            key in merged
+            and isinstance(merged[key], (int, float))
+            and isinstance(value, (int, float))
+        ):
             merged[key] = merged[key] + value
         else:
             merged[key] = value
     return merged
 
 
-def _entity_keys(name: str, entity_type: Optional[str], aliases: List[str]) -> List[str]:
+def _entity_keys(
+    name: str, entity_type: Optional[str], aliases: List[str]
+) -> List[str]:
     keys = {canonical_entity_key(name, entity_type)}
     for alias in aliases:
         keys.add(canonical_entity_key(alias, entity_type))
@@ -133,7 +139,10 @@ class _ElasticBase:
             )
         except ApiError as exc:
             err = getattr(exc, "error", None)
-            if err == "resource_already_exists_exception" or "resource_already_exists_exception" in str(exc):
+            if (
+                err == "resource_already_exists_exception"
+                or "resource_already_exists_exception" in str(exc)
+            ):
                 return
             raise
 
@@ -226,7 +235,7 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
                 try:
                     self.client.indices.refresh(
                         index=f"{self.indices.entities},{self.indices.relations},"
-                               f"{self.indices.provenance},{self.indices.relation_provenance}"
+                        f"{self.indices.provenance},{self.indices.relation_provenance}"
                     )
                 except Exception:
                     pass
@@ -343,17 +352,23 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
             canonical = canonical_entity_key(entity.name, entity.type)
             deterministic_id = _deterministic_entity_id(canonical)
             aliases = entity.aliases or []
-            hits = self.client.search(
-                index=self.indices.entities,
-                query={"term": {"canonical_key": canonical}},
-                size=10,
-            ).get("hits", {}).get("hits", [])
+            hits = (
+                self.client.search(
+                    index=self.indices.entities,
+                    query={"term": {"canonical_key": canonical}},
+                    size=10,
+                )
+                .get("hits", {})
+                .get("hits", [])
+            )
 
             entity_id = deterministic_id
             existing_sources: List[Dict[str, Any]] = []
             if hits:
                 # Keep legacy IDs stable to avoid breaking existing relation pointers.
-                chosen = next((hit for hit in hits if hit["_id"] == deterministic_id), hits[0])
+                chosen = next(
+                    (hit for hit in hits if hit["_id"] == deterministic_id), hits[0]
+                )
                 entity_id = chosen["_id"]
                 existing_sources = [hit["_source"] for hit in hits]
 
@@ -394,19 +409,27 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
     def upsert_relations(self, relations: List[Relation]) -> List[Relation]:
         stored: List[Relation] = []
         for relation in relations:
-            key = _triple_key(relation.subject_id, relation.predicate, relation.object_id)
+            key = _triple_key(
+                relation.subject_id, relation.predicate, relation.object_id
+            )
             deterministic_id = _deterministic_relation_id(key)
-            hits = self.client.search(
-                index=self.indices.relations,
-                query={"term": {"triple_key": key}},
-                size=10,
-            ).get("hits", {}).get("hits", [])
+            hits = (
+                self.client.search(
+                    index=self.indices.relations,
+                    query={"term": {"triple_key": key}},
+                    size=10,
+                )
+                .get("hits", {})
+                .get("hits", [])
+            )
 
             relation_id = deterministic_id
             existing_sources: List[Dict[str, Any]] = []
             if hits:
                 # Keep legacy IDs stable to avoid breaking existing provenance pointers.
-                chosen = next((hit for hit in hits if hit["_id"] == deterministic_id), hits[0])
+                chosen = next(
+                    (hit for hit in hits if hit["_id"] == deterministic_id), hits[0]
+                )
                 relation_id = chosen["_id"]
                 existing_sources = [hit["_source"] for hit in hits]
 
@@ -537,7 +560,9 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
         id_list = list(ids)
         if not id_list:
             return []
-        documents = self.client.mget(index=self.indices.entities, ids=id_list).get("docs", [])
+        documents = self.client.mget(index=self.indices.entities, ids=id_list).get(
+            "docs", []
+        )
         entities: List[Entity] = []
         for doc in documents:
             if not doc.get("found"):
@@ -552,7 +577,11 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
         since: Optional[datetime] = None,
         until: Optional[datetime] = None,
     ) -> Dict[str, List[datetime]]:
-        relation_id_list = list(dict.fromkeys(str(relation_id) for relation_id in relation_ids if relation_id))
+        relation_id_list = list(
+            dict.fromkeys(
+                str(relation_id) for relation_id in relation_ids if relation_id
+            )
+        )
         if not relation_id_list:
             return {}
 
@@ -671,7 +700,10 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
 
         nodes = self._fetch_entities_by_ids(visited)
         return Subgraph(
-            nodes=[SubgraphNode(id=node.id, name=node.name, type=node.type) for node in nodes],
+            nodes=[
+                SubgraphNode(id=node.id, name=node.name, type=node.type)
+                for node in nodes
+            ],
             edges=[
                 SubgraphEdge(
                     id=edge.id,
@@ -697,7 +729,9 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
             sort=[{"_id": "asc"}],
         )
         entities = [self._to_entity(hit["_id"], hit["_source"]) for hit in entity_hits]
-        relations = [self._to_relation(hit["_id"], hit["_source"]) for hit in relation_hits]
+        relations = [
+            self._to_relation(hit["_id"], hit["_source"]) for hit in relation_hits
+        ]
         return Subgraph(
             nodes=[SubgraphNode(id=e.id, name=e.name, type=e.type) for e in entities],
             edges=[
@@ -737,8 +771,12 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
             if not chunk:
                 continue
             response = self.client.mget(index=self.indices.provenance, ids=chunk)
-            provenance_docs.extend(doc for doc in response.get("docs", []) if doc.get("found"))
-        provenance = [self._to_provenance(doc["_id"], doc["_source"]) for doc in provenance_docs]
+            provenance_docs.extend(
+                doc for doc in response.get("docs", []) if doc.get("found")
+            )
+        provenance = [
+            self._to_provenance(doc["_id"], doc["_source"]) for doc in provenance_docs
+        ]
         provenance.sort(key=lambda p: p.timestamp, reverse=True)
 
         run_ids = sorted({p.extraction_run_id for p in provenance})
@@ -753,10 +791,207 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
         return relation, provenance, runs
 
     def count_entities(self) -> int:
-        return int(self.client.count(index=self.indices.entities, query={"match_all": {}})["count"])
+        return int(
+            self.client.count(index=self.indices.entities, query={"match_all": {}})[
+                "count"
+            ]
+        )
 
     def count_relations(self) -> int:
-        return int(self.client.count(index=self.indices.relations, query={"match_all": {}})["count"])
+        return int(
+            self.client.count(index=self.indices.relations, query={"match_all": {}})[
+                "count"
+            ]
+        )
+
+    def _count_relation_evidence_window(
+        self,
+        *,
+        since: datetime,
+        until: datetime,
+        source_uri: Optional[str] = None,
+    ) -> Counter[str]:
+        filters: List[Dict[str, Any]] = [
+            {
+                "range": {
+                    "timestamp": {
+                        "gte": since.isoformat(),
+                        "lt": until.isoformat(),
+                    }
+                }
+            }
+        ]
+        if source_uri:
+            filters.append({"term": {"source_uri": source_uri}})
+
+        counts: Counter[str] = Counter()
+        for hit in self._iter_search_hits(
+            self.indices.relation_provenance,
+            query={"bool": {"filter": filters}},
+            sort=[{"timestamp": "asc"}, {"_id": "asc"}],
+            size=1000,
+        ):
+            source = hit.get("_source") or {}
+            relation_id = str(source.get("relation_id", ""))
+            if relation_id:
+                counts[relation_id] += 1
+        return counts
+
+    def get_pir_trending_summary(
+        self,
+        *,
+        days: int = 7,
+        top_n: int = 10,
+        source_uri: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        days = max(1, int(days))
+        top_n = max(1, min(int(top_n), 50))
+        now = datetime.now(timezone.utc)
+        current_since = now - timedelta(days=days)
+        previous_since = current_since - timedelta(days=days)
+
+        current_counts = self._count_relation_evidence_window(
+            since=current_since,
+            until=now,
+            source_uri=source_uri,
+        )
+        previous_counts = self._count_relation_evidence_window(
+            since=previous_since,
+            until=current_since,
+            source_uri=source_uri,
+        )
+
+        relation_ids = sorted(set(current_counts.keys()) | set(previous_counts.keys()))
+        relation_map: Dict[str, Relation] = {}
+        for i in range(0, len(relation_ids), 512):
+            chunk = relation_ids[i : i + 512]
+            if not chunk:
+                continue
+            response = self.client.mget(index=self.indices.relations, ids=chunk)
+            for doc in response.get("docs", []):
+                if not doc.get("found"):
+                    continue
+                relation_map[doc["_id"]] = self._to_relation(doc["_id"], doc["_source"])
+
+        entity_ids: set[str] = set()
+        for relation in relation_map.values():
+            entity_ids.add(relation.subject_id)
+            entity_ids.add(relation.object_id)
+        entities_by_id = {
+            entity.id: entity for entity in self._fetch_entities_by_ids(entity_ids)
+        }
+
+        def _build_question(entity_type: str, question: str) -> Dict[str, Any]:
+            by_entity: Dict[str, Dict[str, Any]] = {}
+            for relation_id, relation in relation_map.items():
+                current_evidence = int(current_counts.get(relation_id, 0))
+                previous_evidence = int(previous_counts.get(relation_id, 0))
+                if current_evidence <= 0 and previous_evidence <= 0:
+                    continue
+
+                candidate_ids: List[str] = []
+                subject = entities_by_id.get(relation.subject_id)
+                obj = entities_by_id.get(relation.object_id)
+                if subject and subject.type == entity_type:
+                    candidate_ids.append(subject.id)
+                if obj and obj.type == entity_type and obj.id != relation.subject_id:
+                    candidate_ids.append(obj.id)
+                if not candidate_ids:
+                    continue
+
+                for entity_id in candidate_ids:
+                    stat = by_entity.setdefault(
+                        entity_id,
+                        {
+                            "current_evidence": 0,
+                            "previous_evidence": 0,
+                            "current_relation_ids": set(),
+                            "predicate_counts": Counter(),
+                        },
+                    )
+                    stat["current_evidence"] = (
+                        int(stat["current_evidence"]) + current_evidence
+                    )
+                    stat["previous_evidence"] = (
+                        int(stat["previous_evidence"]) + previous_evidence
+                    )
+                    if current_evidence > 0:
+                        stat["current_relation_ids"].add(relation_id)
+                        stat["predicate_counts"][relation.predicate] += current_evidence
+
+            items = []
+            for entity_id, stat in by_entity.items():
+                if int(stat["current_evidence"]) <= 0:
+                    continue
+                entity = entities_by_id.get(entity_id)
+                if not entity:
+                    continue
+                current_evidence = int(stat["current_evidence"])
+                previous_evidence = int(stat["previous_evidence"])
+                delta = current_evidence - previous_evidence
+                trend_score = delta / max(previous_evidence, 1)
+                top_predicates = [
+                    {"predicate": pred, "count": count}
+                    for pred, count in stat["predicate_counts"].most_common(5)
+                ]
+                items.append(
+                    {
+                        "entity_id": entity.id,
+                        "name": entity.name,
+                        "type": entity.type,
+                        "current_evidence": current_evidence,
+                        "previous_evidence": previous_evidence,
+                        "delta_evidence": delta,
+                        "trend_score": trend_score,
+                        "relation_count_current": len(stat["current_relation_ids"]),
+                        "top_predicates": top_predicates,
+                    }
+                )
+
+            items.sort(
+                key=lambda item: (
+                    -int(item["delta_evidence"]),
+                    -int(item["current_evidence"]),
+                    str(item["name"]).lower(),
+                )
+            )
+            items = items[:top_n]
+
+            return {
+                "id": f"{entity_type}_trending",
+                "question": question,
+                "entity_type": entity_type,
+                "item_count": len(items),
+                "items": items,
+            }
+
+        return {
+            "generated_at": now.isoformat(),
+            "source_uri": source_uri,
+            "window": {
+                "days": days,
+                "since": current_since.isoformat(),
+                "until": now.isoformat(),
+            },
+            "compare_window": {
+                "days": days,
+                "since": previous_since.isoformat(),
+                "until": current_since.isoformat(),
+            },
+            "questions": [
+                _build_question("malware", "What malware families are trending?"),
+                _build_question(
+                    "vulnerability", "Which CVEs / vulnerabilities are trending?"
+                ),
+                _build_question("threat_actor", "Which threat actors are trending?"),
+                _build_question(
+                    "attack_pattern", "Which ATT&CK techniques are trending?"
+                ),
+                _build_question(
+                    "infrastructure", "What infrastructure is being targeted?"
+                ),
+            ],
+        }
 
     def get_data_quality_summary(
         self,
@@ -818,7 +1053,9 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
                 query=window_query,
             )["count"]
         )
-        missing_timestamp_query: Dict[str, Any] = {"bool": {"must_not": [{"exists": {"field": "timestamp"}}]}}
+        missing_timestamp_query: Dict[str, Any] = {
+            "bool": {"must_not": [{"exists": {"field": "timestamp"}}]}
+        }
         if scope_filters:
             missing_timestamp_query = {
                 "bool": {
@@ -833,17 +1070,25 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
             )["count"]
         )
 
-        relations_total = int(self.client.count(index=self.indices.relations, query={"match_all": {}})["count"])
+        relations_total = int(
+            self.client.count(index=self.indices.relations, query={"match_all": {}})[
+                "count"
+            ]
+        )
         relations_with_evidence_all_time = int(
             all_time_aggs.get("relations_with_evidence", {}).get("value") or 0
         )
-        active_relations_window = int(window_aggs.get("active_relations", {}).get("value") or 0)
+        active_relations_window = int(
+            window_aggs.get("active_relations", {}).get("value") or 0
+        )
         sources_in_window = int(window_aggs.get("sources", {}).get("value") or 0)
 
         orphan_relations = None
         evidence_coverage = None
         if not source_uri:
-            orphan_relations = max(relations_total - relations_with_evidence_all_time, 0)
+            orphan_relations = max(
+                relations_total - relations_with_evidence_all_time, 0
+            )
             if relations_total > 0:
                 evidence_coverage = relations_with_evidence_all_time / relations_total
 
@@ -852,14 +1097,22 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
             "window_days": days,
             "window_since": since.isoformat(),
             "generated_at": now.isoformat(),
-            "entities_total": int(self.client.count(index=self.indices.entities, query={"match_all": {}})["count"]),
+            "entities_total": int(
+                self.client.count(index=self.indices.entities, query={"match_all": {}})[
+                    "count"
+                ]
+            ),
             "relations_total": relations_total,
             "relations_with_evidence_all_time": relations_with_evidence_all_time,
             "active_relations_window": active_relations_window,
             "evidence_docs_window": evidence_docs_window,
             "sources_in_window": sources_in_window,
-            "latest_event_at": window_aggs.get("latest_event", {}).get("value_as_string"),
-            "earliest_event_at": window_aggs.get("earliest_event", {}).get("value_as_string"),
+            "latest_event_at": window_aggs.get("latest_event", {}).get(
+                "value_as_string"
+            ),
+            "earliest_event_at": window_aggs.get("earliest_event", {}).get(
+                "value_as_string"
+            ),
             "missing_timestamp_docs": missing_timestamp_docs,
             "orphan_relations": orphan_relations,
             "evidence_coverage": evidence_coverage,
@@ -953,7 +1206,9 @@ class ElasticRunStore(_ElasticBase, RunStore):
             refresh="wait_for",
         )
 
-    def update_run_status(self, run_id: str, status: str, error: Optional[str] = None) -> None:
+    def update_run_status(
+        self, run_id: str, status: str, error: Optional[str] = None
+    ) -> None:
         self.client.update(
             index=self.indices.runs,
             id=run_id,
@@ -1378,7 +1633,11 @@ class ElasticMetricsStore(_ElasticBase, MetricsStore):
             index=self.indices.metrics,
             query={"bool": {"filter": filters}},
             size=1,
-            sort=[{"bucket_start": "desc"}, {"evidence_count": "desc"}, {"entity_name": "asc"}],
+            sort=[
+                {"bucket_start": "desc"},
+                {"evidence_count": "desc"},
+                {"entity_name": "asc"},
+            ],
             aggs={
                 "active_actors": {"cardinality": {"field": "entity_id"}},
                 "evidence_total": {"sum": {"field": "evidence_count"}},

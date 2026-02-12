@@ -14,45 +14,56 @@ _TRAILING_COMMA_RE = re.compile(r",\s*([}\]])")
 # Security identifiers that look like junk but are actually valuable entities.
 # Checked BEFORE the junk regex so they are never dropped.
 _SECURITY_ID_RE = re.compile(
-    r"^T\d{4}"           # MITRE ATT&CK technique IDs — T1059, T1059.001
-    r"|^TA\d{4}"          # MITRE ATT&CK tactic IDs — TA0001
-    r"|^S\d{4}"           # MITRE ATT&CK software IDs — S0154
-    r"|^G\d{4}"           # MITRE ATT&CK group IDs — G0007
-    r"|^M\d{4}"           # MITRE ATT&CK mitigation IDs — M1036
-    r"|^CVE-"             # CVE identifiers — CVE-2021-44228
-    r"|^CWE-"             # CWE identifiers — CWE-79
-    r"|^CAPEC-"           # CAPEC identifiers
-    r"|^APT\d"            # APT group names — APT28, APT29
-    r"|^FIN\d"            # FIN groups — FIN7
-    r"|^UNC\d"            # UNC groups — UNC2452
-    ,
+    r"^T\d{4}"  # MITRE ATT&CK technique IDs — T1059, T1059.001
+    r"|^TA\d{4}"  # MITRE ATT&CK tactic IDs — TA0001
+    r"|^S\d{4}"  # MITRE ATT&CK software IDs — S0154
+    r"|^G\d{4}"  # MITRE ATT&CK group IDs — G0007
+    r"|^M\d{4}"  # MITRE ATT&CK mitigation IDs — M1036
+    r"|^CVE-"  # CVE identifiers — CVE-2021-44228
+    r"|^CWE-"  # CWE identifiers — CWE-79
+    r"|^CAPEC-"  # CAPEC identifiers
+    r"|^APT\d"  # APT group names — APT28, APT29
+    r"|^FIN\d"  # FIN groups — FIN7
+    r"|^UNC\d",  # UNC groups — UNC2452
     re.IGNORECASE,
 )
 
 # Patterns that indicate junk entities (page refs, IDs, bare numbers, etc.)
 _JUNK_ENTITY_RE = re.compile(
-    r"^[\d\s.,;:/#\-]+$"                # bare numbers / punctuation
-    r"|^\d{3,}"                          # long digit strings (ISBN, control numbers)
-    r"|^page\s*\d+"                      # page references
-    r"|^figure\s*\d+"                    # figure references
-    r"|^table\s*\d+"                     # table references
-    r"|^chapter\s*\d+"                   # chapter references
-    r"|^section\s*\d+"                   # section references
-    r"|^https?://"                       # URLs
-    r"|^\d{1,2}$"                        # single/double digit numbers
-    r"|^isbn"                            # ISBN
-    r"|^doi:"                            # DOI
-    ,
+    r"^[\d\s.,;:/#\-]+$"  # bare numbers / punctuation
+    r"|^\d{3,}"  # long digit strings (ISBN, control numbers)
+    r"|^page\s*\d+"  # page references
+    r"|^figure\s*\d+"  # figure references
+    r"|^table\s*\d+"  # table references
+    r"|^chapter\s*\d+"  # chapter references
+    r"|^section\s*\d+"  # section references
+    r"|^https?://"  # URLs
+    r"|^\d{1,2}$"  # single/double digit numbers
+    r"|^isbn"  # ISBN
+    r"|^doi:",  # DOI
     re.IGNORECASE,
 )
 
 # Predicates that are too vague to be useful
-_JUNK_PREDICATES = frozenset([
-    "is", "has", "are", "was", "were", "be",
-    "is_found_on_page_number", "is_on_page", "found_on_page",
-    "is_in_section", "contains_page", "page_number",
-    "has_isbn", "has_number", "has_id",
-])
+_JUNK_PREDICATES = frozenset(
+    [
+        "is",
+        "has",
+        "are",
+        "was",
+        "were",
+        "be",
+        "is_found_on_page_number",
+        "is_on_page",
+        "found_on_page",
+        "is_in_section",
+        "contains_page",
+        "page_number",
+        "has_isbn",
+        "has_number",
+        "has_id",
+    ]
+)
 
 
 def _strip_code_fences(text: str) -> str:

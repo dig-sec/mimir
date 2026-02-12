@@ -3,12 +3,13 @@
 Parses a STIX bundle and converts SDOs + SROs into Wellspring entities
 and relations, bypassing LLM extraction entirely for structured data.
 """
+
 from __future__ import annotations
 
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 from uuid import uuid4
 
 from ..dedupe import EntityResolver
@@ -113,6 +114,7 @@ def _extract_kill_chain(obj: Dict[str, Any]) -> List[str]:
 @dataclass
 class StixImportResult:
     """Summary returned after a STIX bundle import."""
+
     entities_created: int = 0
     relations_created: int = 0
     objects_skipped: int = 0

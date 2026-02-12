@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections import Counter
 import os
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 from uuid import uuid4
@@ -10,6 +10,11 @@ from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import HTMLResponse, Response
 
 from ..config import get_settings
+from ..connectors import sync_feedly_index
+from ..elastic_source import ElasticsearchSourceClient, pull_from_elasticsearch
+from ..export import export_csv_zip, export_graphml, export_json, export_markdown
+from ..opencti.client import OpenCTIClient
+from ..opencti.sync import pull_from_opencti
 from ..schemas import (
     ExplainEntityRelation,
     ExplainEntityResponse,
@@ -21,17 +26,12 @@ from ..schemas import (
     RunStatusResponse,
     Subgraph,
 )
-from ..stix.importer import ingest_stix_bundle, parse_stix_file
 from ..stix.exporter import export_stix_bundle
-from ..export import export_csv_zip, export_graphml, export_json, export_markdown
-from ..opencti.client import OpenCTIClient
-from ..opencti.sync import pull_from_opencti
-from ..elastic_source import ElasticsearchSourceClient, pull_from_elasticsearch
-from ..connectors import sync_feedly_index
+from ..stix.importer import ingest_stix_bundle, parse_stix_file
 from ..storage.factory import create_graph_store, create_metrics_store, create_run_store
-from .visualize import render_html
+from .tasks import TaskStatus, task_manager
 from .ui import render_root_ui
-from .tasks import task_manager, TaskStatus
+from .visualize import render_html
 
 settings = get_settings()
 
@@ -76,7 +76,9 @@ def _bucket_start(dt: datetime, interval: str) -> datetime:
         return dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     if interval == "quarter":
         first_month = ((dt.month - 1) // 3) * 3 + 1
-        return dt.replace(month=first_month, day=1, hour=0, minute=0, second=0, microsecond=0)
+        return dt.replace(
+            month=first_month, day=1, hour=0, minute=0, second=0, microsecond=0
+        )
     return dt.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
@@ -168,22 +170,26 @@ async def upload_documents(files: List[UploadFile] = File(...)):
                 stix_result = ingest_stix_bundle(
                     bundle, graph_store, source_uri=f"stix://{filename}"
                 )
-                results.append({
-                    "filename": filename,
-                    "status": "completed",
-                    "type": "stix",
-                    "entities": stix_result.entities_created,
-                    "relations": stix_result.relations_created,
-                    "skipped": stix_result.objects_skipped,
-                    "errors": stix_result.errors,
-                })
+                results.append(
+                    {
+                        "filename": filename,
+                        "status": "completed",
+                        "type": "stix",
+                        "entities": stix_result.entities_created,
+                        "relations": stix_result.relations_created,
+                        "skipped": stix_result.objects_skipped,
+                        "errors": stix_result.errors,
+                    }
+                )
             except ValueError as exc:
-                results.append({
-                    "filename": filename,
-                    "status": "error",
-                    "type": "stix",
-                    "error": str(exc),
-                })
+                results.append(
+                    {
+                        "filename": filename,
+                        "status": "error",
+                        "type": "stix",
+                        "error": str(exc),
+                    }
+                )
             continue
 
         # ── Regular document: enqueue for LLM extraction ──
@@ -214,8 +220,15 @@ async def upload_documents(files: List[UploadFile] = File(...)):
 def list_runs():
     """List recent extraction runs."""
     runs = run_store.list_recent_runs(limit=50)
-    return [{"run_id": r.run_id, "status": r.status, "model": r.model,
-             "started_at": r.started_at.isoformat()} for r in runs]
+    return [
+        {
+            "run_id": r.run_id,
+            "status": r.status,
+            "model": r.model,
+            "started_at": r.started_at.isoformat(),
+        }
+        for r in runs
+    ]
 
 
 @router.get("/api/export/stix")
@@ -267,10 +280,13 @@ def _resolve_subgraph(
             raise HTTPException(status_code=404, detail="Seed entity not found")
         seed = matches[0].id
     else:
-        raise HTTPException(status_code=400,
-                            detail="seed_id / seed_name required, or set scope=all")
+        raise HTTPException(
+            status_code=400, detail="seed_id / seed_name required, or set scope=all"
+        )
     return graph_store.get_subgraph(
-        seed_entity_id=seed, depth=depth, min_confidence=min_confidence,
+        seed_entity_id=seed,
+        depth=depth,
+        min_confidence=min_confidence,
     )
 
 
@@ -306,7 +322,9 @@ def export_graphml_endpoint(
     return Response(
         content=xml,
         media_type="application/xml",
-        headers={"Content-Disposition": "attachment; filename=wellspring-export.graphml"},
+        headers={
+            "Content-Disposition": "attachment; filename=wellspring-export.graphml"
+        },
     )
 
 
@@ -343,6 +361,7 @@ def export_markdown_endpoint(
 
 # ── POST export: accepts the visible graph inline ───────────────────
 
+
 @router.post("/api/export/stix")
 def post_export_stix(payload: Subgraph):
     """Export a client-provided subgraph as STIX 2.1."""
@@ -368,7 +387,9 @@ def post_export_graphml(payload: Subgraph):
     return Response(
         content=xml,
         media_type="application/xml",
-        headers={"Content-Disposition": "attachment; filename=wellspring-export.graphml"},
+        headers={
+            "Content-Disposition": "attachment; filename=wellspring-export.graphml"
+        },
     )
 
 
@@ -467,7 +488,9 @@ def explain(
         for edge in subgraph.edges[:50]:
             relation, provenance, runs = graph_store.explain_edge(edge.id)
             relations.append(
-                ExplainEntityRelation(relation=relation, provenance=provenance, runs=runs)
+                ExplainEntityRelation(
+                    relation=relation, provenance=provenance, runs=runs
+                )
             )
         return ExplainEntityResponse(entity=entity, relations=relations)
     raise HTTPException(status_code=400, detail="relation_id or entity_id required")
@@ -521,7 +544,9 @@ def entity_timeline(
     """Show how an entity's connected relations evolve over time."""
     interval = interval.lower()
     if interval not in _TIMELINE_INTERVALS:
-        raise HTTPException(status_code=400, detail="interval must be day|week|month|quarter|year")
+        raise HTTPException(
+            status_code=400, detail="interval must be day|week|month|quarter|year"
+        )
 
     entity = _resolve_entity(entity_id, entity_name)
     since_utc = _to_utc(since) if since else None
@@ -639,7 +664,9 @@ def threat_actor_timeline(
     """Aggregate temporal activity for threat actors in a graph scope."""
     interval = interval.lower()
     if interval not in _TIMELINE_INTERVALS:
-        raise HTTPException(status_code=400, detail="interval must be day|week|month|quarter|year")
+        raise HTTPException(
+            status_code=400, detail="interval must be day|week|month|quarter|year"
+        )
 
     since_utc = _to_utc(since) if since else None
     until_utc = _to_utc(until) if until else None
@@ -661,7 +688,9 @@ def threat_actor_timeline(
         subgraph = graph_store.get_full_graph(min_confidence=min_confidence)
 
     node_by_id = {node.id: node for node in subgraph.nodes}
-    threat_actor_ids = {node.id for node in subgraph.nodes if node.type == "threat_actor"}
+    threat_actor_ids = {
+        node.id for node in subgraph.nodes if node.type == "threat_actor"
+    }
 
     actor_buckets: Dict[str, Dict[datetime, Dict[str, object]]] = {}
     actor_relation_ids: Dict[str, set[str]] = {}
@@ -710,9 +739,9 @@ def threat_actor_timeline(
 
         for actor_id in connected_actor_ids:
             actor_relation_ids.setdefault(actor_id, set()).add(edge.id)
-            actor_evidence_totals[actor_id] = (
-                actor_evidence_totals.get(actor_id, 0) + len(filtered_timestamps)
-            )
+            actor_evidence_totals[actor_id] = actor_evidence_totals.get(
+                actor_id, 0
+            ) + len(filtered_timestamps)
             by_bucket = actor_buckets.setdefault(actor_id, {})
             for ts in filtered_timestamps:
                 bucket_key = _bucket_start(ts, interval)
@@ -738,12 +767,18 @@ def threat_actor_timeline(
                 bucket["evidence_count"] = int(bucket["evidence_count"]) + 1
                 predicates[edge.predicate] += 1
 
-    active_actor_ids = [actor_id for actor_id in threat_actor_ids if actor_id in actor_relation_ids]
+    active_actor_ids = [
+        actor_id for actor_id in threat_actor_ids if actor_id in actor_relation_ids
+    ]
     active_actor_ids.sort(
         key=lambda actor_id: (
             -len(actor_relation_ids.get(actor_id, set())),
             -actor_evidence_totals.get(actor_id, 0),
-            node_by_id.get(actor_id).name.lower() if actor_id in node_by_id else actor_id,
+            (
+                node_by_id.get(actor_id).name.lower()
+                if actor_id in node_by_id
+                else actor_id
+            ),
         )
     )
 
@@ -806,12 +841,23 @@ def threat_actor_timeline(
 @router.post("/api/opencti/pull")
 async def opencti_pull(
     entity_types: List[str] = Query(
-        default=["Malware", "Threat-Actor", "Attack-Pattern", "Tool",
-                 "Vulnerability", "Campaign", "Intrusion-Set",
-                 "Indicator", "Infrastructure", "Course-Of-Action", "Report"]
+        default=[
+            "Malware",
+            "Threat-Actor",
+            "Attack-Pattern",
+            "Tool",
+            "Vulnerability",
+            "Campaign",
+            "Intrusion-Set",
+            "Indicator",
+            "Infrastructure",
+            "Course-Of-Action",
+            "Report",
+        ]
     ),
-    max_per_type: int = Query(default=0, ge=0, le=10000,
-                              description="0 = fetch all (no limit)"),
+    max_per_type: int = Query(
+        default=0, ge=0, le=10000, description="0 = fetch all (no limit)"
+    ),
 ):
     """Pull entities from OpenCTI as a background task."""
     client = _get_opencti_client()
@@ -821,17 +867,24 @@ async def opencti_pull(
             detail="OpenCTI not configured (set OPENCTI_URL and OPENCTI_TOKEN env vars)",
         )
 
-    task = task_manager.create("opencti_pull", {
-        "entity_types": entity_types,
-        "max_per_type": max_per_type,
-    })
+    task = task_manager.create(
+        "opencti_pull",
+        {
+            "entity_types": entity_types,
+            "max_per_type": max_per_type,
+        },
+    )
     task_manager.update(task.id, status=TaskStatus.RUNNING, progress="Starting...")
 
     def _run_sync():
         try:
             result = pull_from_opencti(
-                client, graph_store, entity_types, max_per_type,
-                run_store=run_store, settings=settings,
+                client,
+                graph_store,
+                entity_types,
+                max_per_type,
+                run_store=run_store,
+                settings=settings,
                 progress_cb=lambda msg: task_manager.update(task.id, progress=msg),
             )
             task_manager.update(
@@ -858,6 +911,7 @@ async def opencti_pull(
 
     async def _run():
         import asyncio
+
         await asyncio.to_thread(_run_sync)
 
     task_manager.start_async(task.id, _run())
@@ -871,11 +925,13 @@ async def elasticsearch_pull(
         description="Optional list of index names. Defaults to ELASTIC_CONNECTOR_INDICES.",
     ),
     max_per_index: int = Query(default=500, ge=1, le=20000),
-    lookback_minutes: int = Query(default=settings.elastic_connector_lookback_minutes, ge=0, le=10080),
+    lookback_minutes: int = Query(
+        default=settings.elastic_connector_lookback_minutes, ge=0
+    ),
 ):
     """Pull source documents from Elasticsearch and queue LLM extraction runs."""
     selected_indices: List[str] = []
-    for raw in (indices or settings.elastic_connector_indices_list):
+    for raw in indices or settings.elastic_connector_indices_list:
         for idx in raw.split(","):
             if idx.strip():
                 selected_indices.append(idx.strip())
@@ -900,7 +956,9 @@ async def elasticsearch_pull(
             "lookback_minutes": lookback_minutes,
         },
     )
-    task_manager.update(task.id, status=TaskStatus.RUNNING, progress="Starting Elasticsearch pull...")
+    task_manager.update(
+        task.id, status=TaskStatus.RUNNING, progress="Starting Elasticsearch pull..."
+    )
 
     def _run_sync():
         try:
@@ -945,6 +1003,7 @@ async def elasticsearch_pull(
 
     async def _run():
         import asyncio
+
         await asyncio.to_thread(_run_sync)
 
     task_manager.start_async(task.id, _run())
@@ -954,12 +1013,17 @@ async def elasticsearch_pull(
 @router.post("/api/feedly/pull")
 async def feedly_pull(
     index: str = Query(default="feedly_news", description="Feedly ES index name"),
-    max_articles: int = Query(default=0, ge=0, le=100000, description="Max articles (0=unlimited)"),
-    lookback_minutes: int = Query(
-        default=settings.elastic_connector_lookback_minutes, ge=0, le=43200,
-        description="Only fetch articles newer than N minutes",
+    max_articles: int = Query(
+        default=0, ge=0, le=100000, description="Max articles (0=unlimited)"
     ),
-    queue_for_llm: bool = Query(default=False, description="Also queue text for LLM extraction"),
+    lookback_minutes: int = Query(
+        default=settings.elastic_connector_lookback_minutes,
+        ge=0,
+        description="Only fetch articles newer than N minutes (0=all time)",
+    ),
+    queue_for_llm: bool = Query(
+        default=False, description="Also queue text for LLM extraction"
+    ),
 ):
     """Pull structured CTI data from a Feedly Elasticsearch index."""
     if not settings.elastic_connector_hosts_list:
@@ -977,11 +1041,15 @@ async def feedly_pull(
             "queue_for_llm": queue_for_llm,
         },
     )
-    task_manager.update(task.id, status=TaskStatus.RUNNING, progress="Starting Feedly pull...")
+    task_manager.update(
+        task.id, status=TaskStatus.RUNNING, progress="Starting Feedly pull..."
+    )
 
-    since = None
-    if lookback_minutes > 0:
-        since = datetime.now(timezone.utc) - timedelta(minutes=lookback_minutes)
+    since = (
+        datetime.now(timezone.utc) - timedelta(minutes=lookback_minutes)
+        if lookback_minutes > 0
+        else datetime(2000, 1, 1, tzinfo=timezone.utc)  # epoch = all time
+    )
 
     def _run_sync():
         try:
@@ -1024,6 +1092,7 @@ async def feedly_pull(
 
     async def _run():
         import asyncio
+
         await asyncio.to_thread(_run_sync)
 
     task_manager.start_async(task.id, _run())
@@ -1033,19 +1102,26 @@ async def feedly_pull(
 @router.post("/api/sources/pull-all")
 async def pull_all_sources(
     lookback_minutes: int = Query(
-        default=settings.elastic_connector_lookback_minutes, ge=0, le=43200,
-        description="Lookback window for time-based sources",
+        default=settings.elastic_connector_lookback_minutes,
+        ge=0,
+        description="Lookback window for time-based sources (0=all time)",
     ),
-    queue_for_llm: bool = Query(default=False, description="Queue Feedly article text for LLM extraction too"),
+    queue_for_llm: bool = Query(
+        default=False, description="Queue Feedly article text for LLM extraction too"
+    ),
     extensions: str = Query(default=".txt,.md,.pdf,.json,.html,.csv,.xml,.yaml,.yml"),
 ):
-    """Pull from ALL configured sources in a single background task.
+    """Pull from ALL configured sources concurrently.
 
-    Sequentially runs:
-     1. Feedly structured CTI import
-     2. OpenCTI entity pull (if configured)
-     3. Filesystem scan (if watched folders configured)
+    Runs each connector in its own thread:
+     - Feedly structured CTI import
+     - OpenCTI entity pull (if configured)
+     - Filesystem scan (if watched folders configured)
+
+    Each connector gets its own sub-task for independent progress tracking.
     """
+    from concurrent.futures import Future, ThreadPoolExecutor
+
     task = task_manager.create(
         "pull_all_sources",
         {
@@ -1054,87 +1130,152 @@ async def pull_all_sources(
             "extensions": extensions,
         },
     )
-    task_manager.update(task.id, status=TaskStatus.RUNNING, progress="Starting pull-all...")
+    task_manager.update(
+        task.id, status=TaskStatus.RUNNING, progress="Launching connectors..."
+    )
 
-    since = None
-    if lookback_minutes > 0:
-        since = datetime.now(timezone.utc) - timedelta(minutes=lookback_minutes)
+    since = (
+        datetime.now(timezone.utc) - timedelta(minutes=lookback_minutes)
+        if lookback_minutes > 0
+        else datetime(2000, 1, 1, tzinfo=timezone.utc)  # epoch = all time
+    )
 
-    def _run_sync():
+    # Create sub-tasks for each connector
+    sub_ids: Dict[str, str] = {}
+
+    def _make_sub(kind: str, label: str) -> str:
+        sub = task_manager.create(kind, {"parent": task.id})
+        task_manager.update(sub.id, status=TaskStatus.RUNNING, progress=f"{label}...")
+        sub_ids[kind] = sub.id
+        return sub.id
+
+    # ── Connector worker functions ────────────────────────
+
+    def _pull_feedly() -> str:
+        sid = _make_sub("feedly_pull", "Feedly CTI")
+        if not settings.elastic_connector_hosts_list:
+            task_manager.update(
+                sid,
+                status=TaskStatus.COMPLETED,
+                progress="Skipped (no ES hosts)",
+                finished_at=datetime.utcnow().isoformat(),
+            )
+            return "Feedly: skipped (no ES hosts)"
+        try:
+            feedly_result = sync_feedly_index(
+                settings=settings,
+                graph_store=graph_store,
+                run_store=run_store if queue_for_llm else None,
+                index_name=(
+                    settings.elastic_connector_indices_list[0]
+                    if settings.elastic_connector_indices_list
+                    else "feedly_news"
+                ),
+                since=since,
+                max_articles=0,
+                queue_for_llm=queue_for_llm,
+                progress_cb=lambda msg: task_manager.update(
+                    sid, progress=f"Feedly: {msg}"
+                ),
+            )
+            summary = (
+                f"Feedly: {feedly_result.articles_processed} articles, "
+                f"{feedly_result.entities_created} entities, "
+                f"{feedly_result.relations_created} rels, "
+                f"{feedly_result.iocs_created} IOCs"
+            )
+            task_manager.update(
+                sid,
+                status=TaskStatus.COMPLETED,
+                progress=summary,
+                finished_at=datetime.utcnow().isoformat(),
+            )
+            return summary
+        except Exception as exc:
+            task_manager.update(
+                sid,
+                status=TaskStatus.FAILED,
+                error=str(exc),
+                progress=f"Feedly: FAILED ({exc})",
+                finished_at=datetime.utcnow().isoformat(),
+            )
+            return f"Feedly: FAILED ({exc})"
+
+    def _pull_opencti() -> str:
+        sid = _make_sub("opencti_pull", "OpenCTI")
+        opencti_client = _get_opencti_client()
+        if not opencti_client:
+            task_manager.update(
+                sid,
+                status=TaskStatus.COMPLETED,
+                progress="Skipped (not configured)",
+                finished_at=datetime.utcnow().isoformat(),
+            )
+            return "OpenCTI: skipped (not configured)"
+        try:
+            opencti_result = pull_from_opencti(
+                opencti_client,
+                graph_store,
+                entity_types=[
+                    "Malware",
+                    "Threat-Actor",
+                    "Attack-Pattern",
+                    "Tool",
+                    "Vulnerability",
+                    "Campaign",
+                    "Intrusion-Set",
+                    "Indicator",
+                    "Infrastructure",
+                    "Course-Of-Action",
+                    "Report",
+                ],
+                max_per_type=0,
+                run_store=run_store,
+                settings=settings,
+                progress_cb=lambda msg: task_manager.update(
+                    sid, progress=f"OpenCTI: {msg}"
+                ),
+            )
+            summary = (
+                f"OpenCTI: {opencti_result.entities_pulled} entities, "
+                f"{opencti_result.relations_pulled} rels, "
+                f"{opencti_result.reports_queued} reports queued"
+            )
+            task_manager.update(
+                sid,
+                status=TaskStatus.COMPLETED,
+                progress=summary,
+                finished_at=datetime.utcnow().isoformat(),
+            )
+            return summary
+        except Exception as exc:
+            task_manager.update(
+                sid,
+                status=TaskStatus.FAILED,
+                error=str(exc),
+                progress=f"OpenCTI: FAILED ({exc})",
+                finished_at=datetime.utcnow().isoformat(),
+            )
+            return f"OpenCTI: FAILED ({exc})"
+        finally:
+            if opencti_client:
+                opencti_client.close()
+
+    def _pull_filesystem() -> str:
         import pathlib
 
-        summaries: List[str] = []
-        errors: List[str] = []
-
-        # ── 1. Feedly structured CTI ─────────────────────────
-        if settings.elastic_connector_hosts_list:
-            task_manager.update(task.id, progress="[1/3] Pulling Feedly CTI...")
-            try:
-                feedly_result = sync_feedly_index(
-                    settings=settings,
-                    graph_store=graph_store,
-                    run_store=run_store if queue_for_llm else None,
-                    index_name=settings.elastic_connector_indices_list[0]
-                    if settings.elastic_connector_indices_list
-                    else "feedly_news",
-                    since=since,
-                    max_articles=0,
-                    queue_for_llm=queue_for_llm,
-                    progress_cb=lambda msg: task_manager.update(
-                        task.id, progress=f"[1/3] Feedly: {msg}"
-                    ),
-                )
-                summaries.append(
-                    f"Feedly: {feedly_result.articles_processed} articles, "
-                    f"{feedly_result.entities_created} entities, "
-                    f"{feedly_result.relations_created} rels, "
-                    f"{feedly_result.iocs_created} IOCs"
-                )
-                errors.extend(feedly_result.errors[:20])
-            except Exception as exc:
-                summaries.append(f"Feedly: FAILED ({exc})")
-                errors.append(f"feedly: {exc}")
-        else:
-            summaries.append("Feedly: skipped (no ES hosts)")
-
-        # ── 2. OpenCTI ───────────────────────────────────────
-        opencti_client = _get_opencti_client()
-        if opencti_client:
-            task_manager.update(task.id, progress="[2/3] Pulling OpenCTI...")
-            try:
-                opencti_result = pull_from_opencti(
-                    opencti_client, graph_store,
-                    entity_types=[
-                        "Malware", "Threat-Actor", "Attack-Pattern", "Tool",
-                        "Vulnerability", "Campaign", "Intrusion-Set",
-                        "Indicator", "Infrastructure", "Course-Of-Action", "Report",
-                    ],
-                    max_per_type=0,
-                    run_store=run_store,
-                    settings=settings,
-                    progress_cb=lambda msg: task_manager.update(
-                        task.id, progress=f"[2/3] OpenCTI: {msg}"
-                    ),
-                )
-                summaries.append(
-                    f"OpenCTI: {opencti_result.entities_pulled} entities, "
-                    f"{opencti_result.relations_pulled} rels, "
-                    f"{opencti_result.reports_queued} reports queued"
-                )
-                errors.extend(opencti_result.errors[:20])
-            except Exception as exc:
-                summaries.append(f"OpenCTI: FAILED ({exc})")
-                errors.append(f"opencti: {exc}")
-            finally:
-                opencti_client.close()
-        else:
-            summaries.append("OpenCTI: skipped (not configured)")
-
-        # ── 3. Filesystem scan ───────────────────────────────
+        sid = _make_sub("filesystem_scan", "Filesystem scan")
         dirs = settings.watched_folders_list
         valid_dirs = [d for d in dirs if pathlib.Path(d).is_dir()]
-        if valid_dirs:
-            task_manager.update(task.id, progress="[3/3] Scanning filesystem...")
+        if not valid_dirs:
+            task_manager.update(
+                sid,
+                status=TaskStatus.COMPLETED,
+                progress="Skipped (no watched folders)",
+                finished_at=datetime.utcnow().isoformat(),
+            )
+            return "Scan: skipped (no watched folders)"
+        try:
             exts = set(e.strip().lower() for e in extensions.split(","))
             files: List[str] = []
             for d in valid_dirs:
@@ -1160,7 +1301,9 @@ async def pull_all_sources(
                     if filepath.lower().endswith(".json") and _is_stix_bundle(raw):
                         try:
                             bundle = parse_stix_file(raw, fname)
-                            ingest_stix_bundle(bundle, graph_store, source_uri=f"file://{filepath}")
+                            ingest_stix_bundle(
+                                bundle, graph_store, source_uri=f"file://{filepath}"
+                            )
                             stix_ok += 1
                         except Exception as exc:
                             scan_errors.append(f"{fname}: STIX: {exc}")
@@ -1174,40 +1317,93 @@ async def pull_all_sources(
                         started_at=datetime.utcnow(),
                         model=settings.ollama_model,
                         prompt_version=settings.prompt_version,
-                        params={"chunk_size": settings.chunk_size, "chunk_overlap": settings.chunk_overlap},
+                        params={
+                            "chunk_size": settings.chunk_size,
+                            "chunk_overlap": settings.chunk_overlap,
+                        },
                         status="pending",
                         error=None,
                     )
-                    run_store.create_run(run, f"file://{filepath}", text, {"filename": fname, "path": filepath, "size": len(raw)})
+                    run_store.create_run(
+                        run,
+                        f"file://{filepath}",
+                        text,
+                        {"filename": fname, "path": filepath, "size": len(raw)},
+                    )
                     queued += 1
                 except Exception as exc:
                     scan_errors.append(f"{fname}: {exc}")
                 if (i + 1) % 25 == 0:
                     task_manager.update(
-                        task.id,
-                        progress=f"[3/3] Scan: {i+1}/{len(files)} processed, {queued} queued",
+                        sid,
+                        progress=f"Scan: {i+1}/{len(files)} processed, {queued} queued",
                     )
 
-            summaries.append(f"Scan: {queued} queued, {stix_ok} STIX, {len(scan_errors)} errors")
-            errors.extend(scan_errors[:20])
-        else:
-            summaries.append("Scan: skipped (no watched folders)")
+            summary = (
+                f"Scan: {queued} queued, {stix_ok} STIX, {len(scan_errors)} errors"
+            )
+            task_manager.update(
+                sid,
+                status=TaskStatus.COMPLETED,
+                progress=summary,
+                finished_at=datetime.utcnow().isoformat(),
+            )
+            return summary
+        except Exception as exc:
+            task_manager.update(
+                sid,
+                status=TaskStatus.FAILED,
+                error=str(exc),
+                progress=f"Scan: FAILED ({exc})",
+                finished_at=datetime.utcnow().isoformat(),
+            )
+            return f"Scan: FAILED ({exc})"
 
-        task_manager.update(
-            task.id,
-            status=TaskStatus.COMPLETED,
-            progress="Done: " + " | ".join(summaries),
-            detail={
-                "summaries": summaries,
-                "errors": errors[:50],
-            },
-            finished_at=datetime.utcnow().isoformat(),
-        )
+    # ── Run all connectors concurrently ───────────────────
+
+    def _run_all():
+        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="connector") as pool:
+            futures: Dict[str, Future] = {
+                "feedly": pool.submit(_pull_feedly),
+                "opencti": pool.submit(_pull_opencti),
+                "filesystem": pool.submit(_pull_filesystem),
+            }
+
+            # Update parent task as connectors finish
+            summaries: List[str] = []
+            errors: List[str] = []
+            for name, fut in futures.items():
+                try:
+                    result = fut.result()  # blocks until this connector finishes
+                    summaries.append(result)
+                except Exception as exc:
+                    summaries.append(f"{name}: FAILED ({exc})")
+                    errors.append(f"{name}: {exc}")
+
+                # Update parent progress with running status
+                done = sum(1 for f in futures.values() if f.done())
+                task_manager.update(
+                    task.id,
+                    progress=f"{done}/3 connectors done",
+                )
+
+            task_manager.update(
+                task.id,
+                status=TaskStatus.COMPLETED,
+                progress="Done: " + " | ".join(summaries),
+                detail={
+                    "summaries": summaries,
+                    "errors": errors[:50],
+                    "sub_tasks": sub_ids,
+                },
+                finished_at=datetime.utcnow().isoformat(),
+            )
 
     async def _run():
         import asyncio
+
         try:
-            await asyncio.to_thread(_run_sync)
+            await asyncio.to_thread(_run_all)
         except Exception as exc:
             task_manager.update(
                 task.id,
@@ -1217,7 +1413,7 @@ async def pull_all_sources(
             )
 
     task_manager.start_async(task.id, _run())
-    return {"task_id": task.id, "status": "running"}
+    return {"task_id": task.id, "status": "running", "sub_tasks": sub_ids}
 
 
 @router.post("/api/scan")
@@ -1235,13 +1431,19 @@ async def scan_directory(
     # Verify at least one dir exists
     valid_dirs = [d for d in dirs if pathlib.Path(d).is_dir()]
     if not valid_dirs:
-        raise HTTPException(status_code=400, detail=f"No watched folders found: {settings.watched_folders}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"No watched folders found: {settings.watched_folders}",
+        )
 
     exts = set(e.strip().lower() for e in extensions.split(","))
 
-    task = task_manager.create("filesystem_scan", {
-        "watched_folders": valid_dirs,
-    })
+    task = task_manager.create(
+        "filesystem_scan",
+        {
+            "watched_folders": valid_dirs,
+        },
+    )
     task_manager.update(
         task.id,
         status=TaskStatus.RUNNING,
@@ -1250,6 +1452,7 @@ async def scan_directory(
 
     async def _run():
         import asyncio
+
         await asyncio.to_thread(_scan_files_sync, task.id, valid_dirs, exts)
 
     def _scan_files_sync(task_id: str, scan_dirs: List[str], extensions: set):
@@ -1274,7 +1477,9 @@ async def scan_directory(
             )
             return
 
-        task_manager.update(task_id, progress=f"Found {len(files)} files, starting ingestion...")
+        task_manager.update(
+            task_id, progress=f"Found {len(files)} files, starting ingestion..."
+        )
 
         from ..stix.importer import ingest_stix_bundle, parse_stix_file
 
@@ -1326,7 +1531,9 @@ async def scan_directory(
                     error=None,
                 )
                 run_store.create_run(
-                    run, source_uri, text,
+                    run,
+                    source_uri,
+                    text,
                     {"filename": fname, "path": filepath, "size": len(raw)},
                 )
                 queued += 1
@@ -1361,16 +1568,19 @@ async def scan_directory(
 def list_tasks():
     """List all background tasks."""
     tasks = task_manager.list_all()
-    return [{
-        "id": t.id,
-        "kind": t.kind,
-        "status": t.status.value,
-        "progress": t.progress,
-        "started_at": t.started_at,
-        "finished_at": t.finished_at,
-        "error": t.error,
-        "detail": t.detail,
-    } for t in reversed(tasks)]
+    return [
+        {
+            "id": t.id,
+            "kind": t.kind,
+            "status": t.status.value,
+            "progress": t.progress,
+            "started_at": t.started_at,
+            "finished_at": t.finished_at,
+            "error": t.error,
+            "detail": t.detail,
+        }
+        for t in reversed(tasks)
+    ]
 
 
 @router.get("/api/tasks/{task_id}")
@@ -1393,8 +1603,12 @@ def get_task(task_id: str):
 
 @router.post("/api/metrics/rollup")
 async def trigger_metrics_rollup(
-    lookback_days: int = Query(default=settings.metrics_rollup_lookback_days, ge=1, le=3650),
-    min_confidence: float = Query(default=settings.metrics_rollup_min_confidence, ge=0.0, le=1.0),
+    lookback_days: int = Query(
+        default=settings.metrics_rollup_lookback_days, ge=1, le=3650
+    ),
+    min_confidence: float = Query(
+        default=settings.metrics_rollup_min_confidence, ge=0.0, le=1.0
+    ),
     source_uri: Optional[str] = Query(default=None),
 ):
     """Run daily threat-actor rollup in the background."""
@@ -1406,7 +1620,9 @@ async def trigger_metrics_rollup(
             "source_uri": source_uri,
         },
     )
-    task_manager.update(task.id, status=TaskStatus.RUNNING, progress="Starting metrics rollup...")
+    task_manager.update(
+        task.id, status=TaskStatus.RUNNING, progress="Starting metrics rollup..."
+    )
 
     def _run_sync():
         try:
@@ -1437,6 +1653,7 @@ async def trigger_metrics_rollup(
 
     async def _run():
         import asyncio
+
         await asyncio.to_thread(_run_sync)
 
     task_manager.start_async(task.id, _run())
@@ -1459,7 +1676,9 @@ def get_stats(source_uri: Optional[str] = Query(default=None)):
         if settings.metrics_rollup_stale_seconds > 0
         else max(settings.metrics_rollup_interval_seconds * 2, 1800)
     )
-    last_rollup_at = metrics.get("last_rollup_at") if isinstance(metrics, dict) else None
+    last_rollup_at = (
+        metrics.get("last_rollup_at") if isinstance(metrics, dict) else None
+    )
     last_rollup_dt = _parse_iso_datetime(last_rollup_at)
     rollup_age_seconds = None
     if last_rollup_dt:
@@ -1467,8 +1686,13 @@ def get_stats(source_uri: Optional[str] = Query(default=None)):
             int((datetime.now(timezone.utc) - _to_utc(last_rollup_dt)).total_seconds()),
             0,
         )
-    is_stale = metrics is None or not last_rollup_dt or (
-        rollup_age_seconds is not None and rollup_age_seconds > stale_threshold_seconds
+    is_stale = (
+        metrics is None
+        or not last_rollup_dt
+        or (
+            rollup_age_seconds is not None
+            and rollup_age_seconds > stale_threshold_seconds
+        )
     )
 
     return {
@@ -1507,6 +1731,89 @@ def data_quality(
     return quality_fn(days=days, source_uri=source_uri)
 
 
+@router.get("/api/pir/trending")
+def pir_trending(
+    days: int = Query(default=7, ge=1, le=90),
+    top_n: int = Query(default=10, ge=1, le=50),
+    source_uri: Optional[str] = Query(default=None),
+):
+    """Priority Intelligence Requirements: trending entities for current vs previous window."""
+    pir_fn = getattr(graph_store, "get_pir_trending_summary", None)
+    if not callable(pir_fn):
+        raise HTTPException(
+            status_code=501,
+            detail="PIR trending is only available on Elasticsearch backend",
+        )
+    return pir_fn(days=days, top_n=top_n, source_uri=source_uri)
+
+
+@router.get("/api/pir/entity-context")
+def pir_entity_context(entity_id: str = Query(...)):
+    """Return lightweight context for a PIR entity: attrs, neighbors, sources."""
+    entity = graph_store.get_entity(entity_id)
+    if not entity:
+        raise HTTPException(status_code=404, detail="Entity not found")
+
+    # Get depth-1 subgraph (neighbors)
+    subgraph = graph_store.get_subgraph(entity_id, depth=1)
+
+    # Build neighbor summaries grouped by predicate
+    neighbors = []
+    node_map = {n.id: n for n in subgraph.nodes}
+    sources = []
+    seen_uris = set()
+
+    for edge in subgraph.edges[:80]:
+        other_id = edge.object_id if edge.subject_id == entity_id else edge.subject_id
+        other = node_map.get(other_id)
+        if not other:
+            continue
+
+        # Extract source articles from report neighbors
+        if other.type == "report":
+            full_entity = graph_store.get_entity(other.id)
+            attrs = full_entity.attrs if full_entity else {}
+            url = (attrs or {}).get("source_url", "")
+            published = (attrs or {}).get("published")
+            if url and url not in seen_uris:
+                seen_uris.add(url)
+                sources.append(
+                    {
+                        "uri": url,
+                        "title": other.name,
+                        "timestamp": published,
+                    }
+                )
+            continue  # don't add reports to neighbor list
+
+        neighbors.append(
+            {
+                "id": other.id,
+                "name": other.name,
+                "type": other.type,
+                "predicate": edge.predicate,
+                "confidence": edge.confidence,
+            }
+        )
+
+    # Sort neighbors by confidence desc
+    neighbors.sort(key=lambda n: -n["confidence"])
+
+    # Sort sources newest first
+    sources.sort(key=lambda s: s.get("timestamp") or "", reverse=True)
+
+    return {
+        "entity": {
+            "id": entity.id,
+            "name": entity.name,
+            "type": entity.type,
+            "attrs": entity.attrs or {},
+        },
+        "neighbors": neighbors[:30],
+        "sources": sources[:15],
+    }
+
+
 @router.post("/api/recover-stale-runs")
 def recover_stale_runs():
     """Reset runs stuck in 'running' back to 'pending'."""
@@ -1518,6 +1825,7 @@ def recover_stale_runs():
 def get_watched_folders():
     """Return configured watched folders and their file counts."""
     import pathlib
+
     dirs = settings.watched_folders_list
     result = []
     for d in dirs:
@@ -1529,28 +1837,42 @@ def get_watched_folders():
 
 # ── Backfill ──────────────────────────────────────────────────
 
+
 @router.post("/api/backfill")
 async def start_backfill(
-    source: str = Query(default="all", pattern="^(all|feedly|opencti)$", description="all, feedly, or opencti"),
-    reset: bool = Query(default=False, description="Wipe checkpoints and restart from beginning"),
+    source: str = Query(
+        default="all",
+        pattern="^(all|feedly|opencti)$",
+        description="all, feedly, or opencti",
+    ),
+    reset: bool = Query(
+        default=False, description="Wipe checkpoints and restart from beginning"
+    ),
 ):
     """Kick off a full historical backfill as a background task."""
     from ..backfill import CheckpointStore, run_backfill
 
     es_client = getattr(graph_store, "client", None)
     if es_client is None:
-        raise HTTPException(status_code=501, detail="Backfill requires Elasticsearch backend")
+        raise HTTPException(
+            status_code=501, detail="Backfill requires Elasticsearch backend"
+        )
 
     sources = [source] if source != "all" else ["all"]
 
     task = task_manager.create("backfill", {"sources": sources, "reset": reset})
-    task_manager.update(task.id, status=TaskStatus.RUNNING, progress="Starting backfill...")
+    task_manager.update(
+        task.id, status=TaskStatus.RUNNING, progress="Starting backfill..."
+    )
 
     def _run_sync():
         try:
             checkpoints = CheckpointStore(es_client, settings.elastic_index_prefix)
             results = run_backfill(
-                settings, graph_store, run_store, checkpoints,
+                settings,
+                graph_store,
+                run_store,
+                checkpoints,
                 sources=sources,
                 reset=reset,
                 progress_cb=lambda msg: task_manager.update(task.id, progress=msg),
@@ -1572,6 +1894,7 @@ async def start_backfill(
 
     async def _run():
         import asyncio
+
         await asyncio.to_thread(_run_sync)
 
     task_manager.start_async(task.id, _run())
@@ -1585,7 +1908,9 @@ def backfill_status():
 
     es_client = getattr(graph_store, "client", None)
     if es_client is None:
-        raise HTTPException(status_code=501, detail="Backfill requires Elasticsearch backend")
+        raise HTTPException(
+            status_code=501, detail="Backfill requires Elasticsearch backend"
+        )
 
     checkpoints = CheckpointStore(es_client, settings.elastic_index_prefix)
     return get_backfill_status(checkpoints)

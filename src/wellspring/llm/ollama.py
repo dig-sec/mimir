@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Dict, Optional
+
 import httpx
 
 
@@ -10,7 +11,9 @@ class OllamaClient:
         self.model = model
         self._client = httpx.AsyncClient(base_url=base_url, timeout=timeout)
 
-    async def generate(self, prompt: str, params: Optional[Dict[str, Any]] = None) -> str:
+    async def generate(
+        self, prompt: str, params: Optional[Dict[str, Any]] = None
+    ) -> str:
         payload: Dict[str, Any] = {
             "model": self.model,
             "prompt": prompt,

@@ -11,6 +11,7 @@ from .storage.base import GraphStore
 def _deterministic_entity_id(canonical_key: str) -> str:
     """Generate a stable UUID5 from a canonical entity key."""
     from uuid import UUID, uuid5
+
     _NS = UUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
     return str(uuid5(_NS, canonical_key))
 

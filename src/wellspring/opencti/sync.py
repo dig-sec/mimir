@@ -3,20 +3,21 @@
 All functions are synchronous — designed to run in a background thread.
 Entities are processed page-by-page (streaming) to keep memory constant.
 """
+
 from __future__ import annotations
 
-import logging
 import hashlib
-from typing import Any, Dict, List, Optional
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4, uuid5
 
-from .client import OpenCTIClient
 from ..dedupe import EntityResolver
 from ..normalize import normalize_predicate
 from ..schemas import ExtractionRun, Provenance, Relation
 from ..storage.base import GraphStore
+from .client import OpenCTIClient
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ def _det_prov_id(
     )
     return str(uuid5(_NS_PROVENANCE, material))
 
+
 # OpenCTI entity_type → Wellspring entity type
 _TYPE_MAP: Dict[str, str] = {
     "Malware": "malware",
@@ -61,6 +63,7 @@ _TYPE_MAP: Dict[str, str] = {
 @dataclass
 class SyncResult:
     """Summary of a sync operation."""
+
     entities_pulled: int = 0
     relations_pulled: int = 0
     reports_queued: int = 0
@@ -90,6 +93,7 @@ def pull_from_opencti(
             progress_cb(msg)
 
     import contextlib
+
     bulk_ctx = (
         graph_store.bulk_mode()
         if hasattr(graph_store, "bulk_mode")
@@ -101,13 +105,32 @@ def pull_from_opencti(
             _progress(f"[{i}/{len(entity_types)}] Fetching {entity_type}...")
             try:
                 if entity_type == "Report":
-                    _sync_reports(opencti, graph_store, resolver, result,
-                                  run_store, settings, _progress, i, len(entity_types), sync_run_id,
-                                  max_per_type)
+                    _sync_reports(
+                        opencti,
+                        graph_store,
+                        resolver,
+                        result,
+                        run_store,
+                        settings,
+                        _progress,
+                        i,
+                        len(entity_types),
+                        sync_run_id,
+                        max_per_type,
+                    )
                 else:
-                    _sync_entity_type(opencti, graph_store, resolver, result,
-                                      entity_type, _progress, i, len(entity_types), sync_run_id,
-                                      max_per_type)
+                    _sync_entity_type(
+                        opencti,
+                        graph_store,
+                        resolver,
+                        result,
+                        entity_type,
+                        _progress,
+                        i,
+                        len(entity_types),
+                        sync_run_id,
+                        max_per_type,
+                    )
             except Exception as exc:
                 logger.warning("Failed to pull %s: %s", entity_type, exc)
                 result.errors.append(f"{entity_type}: {exc}")
@@ -115,8 +138,10 @@ def pull_from_opencti(
 
     logger.info(
         "Pulled %d entities, %d relations, queued %d reports for LLM (%d errors)",
-        result.entities_pulled, result.relations_pulled,
-        result.reports_queued, len(result.errors),
+        result.entities_pulled,
+        result.relations_pulled,
+        result.reports_queued,
+        len(result.errors),
     )
     return result
 
@@ -276,7 +301,9 @@ def _sync_reports(
             stored_relation = graph_store.upsert_relations([rel])[0]
             source_uri = f"opencti://report/{rpt.get('id', 'unknown')}"
             chunk_id = str(obj.get("id") or stored_relation.id)
-            snippet = f"OpenCTI report mentions: {report_entity.name} -> {obj_entity.name}"
+            snippet = (
+                f"OpenCTI report mentions: {report_entity.name} -> {obj_entity.name}"
+            )
             provenance = Provenance(
                 provenance_id=_det_prov_id(
                     source_uri=source_uri,
@@ -369,7 +396,9 @@ def _sync_reports(
             )
             source_uri = f"opencti://report/{rpt['id']}"
             run_store.create_run(
-                run, source_uri, report_text,
+                run,
+                source_uri,
+                report_text,
                 {"opencti_report": rpt["name"], "opencti_id": rpt["id"]},
             )
             result.reports_queued += 1

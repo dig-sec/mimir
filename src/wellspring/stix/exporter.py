@@ -3,14 +3,14 @@
 Converts entities and relations from a subgraph query into valid STIX 2.1
 JSON bundles that can be shared via TAXII, imported into MISP / OpenCTI, etc.
 """
+
 from __future__ import annotations
 
-import hashlib
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from uuid import uuid5, UUID, NAMESPACE_URL
+from uuid import NAMESPACE_URL, uuid5
 
-from ..schemas import Entity, Subgraph, SubgraphEdge, SubgraphNode
+from ..schemas import Subgraph, SubgraphEdge, SubgraphNode
 
 # Wellspring entity type → STIX SDO type
 _ENTITY_TYPE_TO_SDO: Dict[str, str] = {
@@ -24,7 +24,7 @@ _ENTITY_TYPE_TO_SDO: Dict[str, str] = {
     "identity": "identity",
     "indicator": "indicator",
     "infrastructure": "infrastructure",
-    "tactic": "attack-pattern",   # tactics map to attack-pattern in STIX
+    "tactic": "attack-pattern",  # tactics map to attack-pattern in STIX
     "location": "location",
     "report": "report",
 }
@@ -44,6 +44,7 @@ _PREDICATE_TO_SRO: Dict[str, str] = {
     "variant_of": "variant-of",
     "derived_from": "derived-from",
     "related_to": "related-to",
+    "associated_with": "related-to",
     "communicates_with": "communicates-with",
     "delivers": "delivers",
     "downloads": "downloads",
@@ -54,10 +55,10 @@ _PREDICATE_TO_SRO: Dict[str, str] = {
     "controls": "controls",
     "compromises": "compromises",
     "originates_from": "originates-from",
+    "located_at": "located-at",
     "beacons_to": "beacons-to",
     "exfiltrates_to": "exfiltrates-to",
     "belongs_to_tactic": "related-to",
-    "associated_with": "related-to",
     "dropped_by": "delivers",  # reversed
     "has_capability": "related-to",
     "mapped_to_technique": "related-to",
@@ -68,6 +69,8 @@ _PREDICATE_TO_SRO: Dict[str, str] = {
     "distributed_via": "delivers",
     "implements_capability": "related-to",
     "sighted_at": "related-to",
+    "mentions": "related-to",
+    "contains_ioc": "related-to",
 }
 
 # Predicates where the Wellspring relation direction is reversed vs STIX

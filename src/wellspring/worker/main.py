@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import suppress
 import logging
+from contextlib import suppress
 
 from ..config import get_settings
 from ..pipeline.runner import process_run

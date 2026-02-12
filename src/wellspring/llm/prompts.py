@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+
 from jinja2 import Environment, FileSystemLoader
 
 _PROMPT_DIR = Path(__file__).parent / "prompts"

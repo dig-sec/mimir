@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import List, Optional, Tuple
 
-from ..schemas import Entity, Relation, Provenance, ExtractionRun, Subgraph
+from ..schemas import Entity, ExtractionRun, Provenance, Relation, Subgraph
 
 
 class GraphStore(ABC):

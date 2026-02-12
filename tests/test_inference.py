@@ -1,5 +1,5 @@
-from wellspring.schemas import Relation
 from wellspring.pipeline.runner import _infer_is_a_relations
+from wellspring.schemas import Relation
 
 
 def test_infer_is_a_transitive():

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 from typing import List
 
 
@@ -12,7 +12,9 @@ def _env_bool(name: str, default: str = "0") -> bool:
 
 @dataclass(frozen=True)
 class Settings:
-    ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://host.docker.internal:11434")
+    ollama_base_url: str = os.getenv(
+        "OLLAMA_BASE_URL", "http://host.docker.internal:11434"
+    )
     ollama_model: str = os.getenv("OLLAMA_MODEL", "phi4")
     prompt_version: str = os.getenv("PROMPT_VERSION", "v1")
     chunk_size: int = int(os.getenv("CHUNK_SIZE", "1200"))
@@ -28,10 +30,18 @@ class Settings:
     enable_inference: bool = os.getenv("ENABLE_INFERENCE", "0") == "1"
     max_chunks_per_run: int = int(os.getenv("MAX_CHUNKS_PER_RUN", "50"))
     metrics_rollup_enabled: bool = os.getenv("METRICS_ROLLUP_ENABLED", "1") == "1"
-    metrics_rollup_interval_seconds: int = int(os.getenv("METRICS_ROLLUP_INTERVAL_SECONDS", "900"))
-    metrics_rollup_lookback_days: int = int(os.getenv("METRICS_ROLLUP_LOOKBACK_DAYS", "365"))
-    metrics_rollup_min_confidence: float = float(os.getenv("METRICS_ROLLUP_MIN_CONFIDENCE", "0.0"))
-    metrics_rollup_stale_seconds: int = int(os.getenv("METRICS_ROLLUP_STALE_SECONDS", "0"))
+    metrics_rollup_interval_seconds: int = int(
+        os.getenv("METRICS_ROLLUP_INTERVAL_SECONDS", "900")
+    )
+    metrics_rollup_lookback_days: int = int(
+        os.getenv("METRICS_ROLLUP_LOOKBACK_DAYS", "365")
+    )
+    metrics_rollup_min_confidence: float = float(
+        os.getenv("METRICS_ROLLUP_MIN_CONFIDENCE", "0.0")
+    )
+    metrics_rollup_stale_seconds: int = int(
+        os.getenv("METRICS_ROLLUP_STALE_SECONDS", "0")
+    )
     opencti_url: str = os.getenv("OPENCTI_URL", "")
     opencti_token: str = os.getenv("OPENCTI_TOKEN", "")
     elastic_connector_enabled: bool = _env_bool(
@@ -79,14 +89,20 @@ class Settings:
             os.getenv("ELASTICSEARCH_BATCH_SIZE", "200"),
         )
     )
-    elastic_connector_lookback_minutes: int = int(os.getenv("ELASTIC_CONNECTOR_LOOKBACK_MINUTES", "180"))
-    elastic_connector_min_text_chars: int = int(os.getenv("ELASTIC_CONNECTOR_MIN_TEXT_CHARS", "50"))
+    elastic_connector_lookback_minutes: int = int(
+        os.getenv("ELASTIC_CONNECTOR_LOOKBACK_MINUTES", "180")
+    )
+    elastic_connector_min_text_chars: int = int(
+        os.getenv("ELASTIC_CONNECTOR_MIN_TEXT_CHARS", "50")
+    )
     elastic_connector_strip_html: bool = _env_bool("ELASTIC_CONNECTOR_STRIP_HTML", "1")
     elastic_connector_normalize_whitespace: bool = _env_bool(
         "ELASTIC_CONNECTOR_NORMALIZE_WHITESPACE",
         "1",
     )
-    elastic_connector_title_fields: str = os.getenv("ELASTIC_CONNECTOR_TITLE_FIELDS", "title,headline,name")
+    elastic_connector_title_fields: str = os.getenv(
+        "ELASTIC_CONNECTOR_TITLE_FIELDS", "title,headline,name"
+    )
     elastic_connector_text_fields: str = os.getenv(
         "ELASTIC_CONNECTOR_TEXT_FIELDS",
         "content,text,summary,description,body,full_text",
@@ -109,27 +125,51 @@ class Settings:
 
     @property
     def elastic_connector_hosts_list(self) -> List[str]:
-        return [host.strip() for host in self.elastic_connector_hosts.split(",") if host.strip()]
+        return [
+            host.strip()
+            for host in self.elastic_connector_hosts.split(",")
+            if host.strip()
+        ]
 
     @property
     def elastic_connector_indices_list(self) -> List[str]:
-        return [index.strip() for index in self.elastic_connector_indices.split(",") if index.strip()]
+        return [
+            index.strip()
+            for index in self.elastic_connector_indices.split(",")
+            if index.strip()
+        ]
 
     @property
     def elastic_connector_title_fields_list(self) -> List[str]:
-        return [field.strip() for field in self.elastic_connector_title_fields.split(",") if field.strip()]
+        return [
+            field.strip()
+            for field in self.elastic_connector_title_fields.split(",")
+            if field.strip()
+        ]
 
     @property
     def elastic_connector_text_fields_list(self) -> List[str]:
-        return [field.strip() for field in self.elastic_connector_text_fields.split(",") if field.strip()]
+        return [
+            field.strip()
+            for field in self.elastic_connector_text_fields.split(",")
+            if field.strip()
+        ]
 
     @property
     def elastic_connector_url_fields_list(self) -> List[str]:
-        return [field.strip() for field in self.elastic_connector_url_fields.split(",") if field.strip()]
+        return [
+            field.strip()
+            for field in self.elastic_connector_url_fields.split(",")
+            if field.strip()
+        ]
 
     @property
     def elastic_connector_timestamp_fields_list(self) -> List[str]:
-        return [field.strip() for field in self.elastic_connector_timestamp_fields.split(",") if field.strip()]
+        return [
+            field.strip()
+            for field in self.elastic_connector_timestamp_fields.split(",")
+            if field.strip()
+        ]
 
     @property
     def watched_folders_list(self) -> List[str]:
