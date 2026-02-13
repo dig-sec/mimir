@@ -4,6 +4,7 @@ import { initGraph, loadGraph } from './graph.js';
 import { initOpenCTI } from './opencti.js';
 import { initPIR } from './pir.js';
 import { initAsk } from './ask.js';
+import { initStatus } from './status.js';
 
 /* ── bootstrap ────────────────────────── */
 initTabs();
@@ -18,3 +19,4 @@ initRuns();
 initOpenCTI();
 initPIR();
 initAsk();
+initStatus();

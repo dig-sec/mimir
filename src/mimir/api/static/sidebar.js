@@ -6,6 +6,7 @@ export function initTabs() {
   const graphArea  = document.querySelector('.graph-area');
   const pirDash    = document.getElementById('pirDashboard');
   const askDash    = document.getElementById('askDashboard');
+  const statusDash = document.getElementById('statusDashboard');
 
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -19,18 +20,28 @@ export function initTabs() {
         graphArea.style.display = 'none';
         if (pirDash) pirDash.style.display = '';
         if (askDash) askDash.style.display = 'none';
+        if (statusDash) statusDash.style.display = 'none';
       } else if (tab === 'ask') {
         /* full-width Ask dashboard */
         sidebar.style.display   = 'none';
         graphArea.style.display = 'none';
         if (pirDash) pirDash.style.display = 'none';
         if (askDash) askDash.style.display = '';
+        if (statusDash) statusDash.style.display = 'none';
+      } else if (tab === 'status') {
+        /* full-width Status dashboard */
+        sidebar.style.display   = 'none';
+        graphArea.style.display = 'none';
+        if (pirDash) pirDash.style.display = 'none';
+        if (askDash) askDash.style.display = 'none';
+        if (statusDash) statusDash.style.display = '';
       } else {
         /* normal sidebar + graph */
         sidebar.style.display   = '';
         graphArea.style.display = '';
         if (pirDash) pirDash.style.display = 'none';
         if (askDash) askDash.style.display = 'none';
+        if (statusDash) statusDash.style.display = 'none';
         document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
         const name = tab.charAt(0).toUpperCase() + tab.slice(1);
         document.getElementById('panel' + name)?.classList.add('active');

@@ -5,7 +5,6 @@ export function initOpenCTI() {
   document.getElementById('elasticPullBtn').addEventListener('click', pullElasticsearchDocs);
   document.getElementById('feedlyPullBtn').addEventListener('click', pullFeedly);
   document.getElementById('openctiPullBtn').addEventListener('click', pullOpenCTI);
-  document.getElementById('pullAllBtn').addEventListener('click', pullAllSources);
 
   // Load watched folder names into button label
   loadWatchedFolders();
@@ -194,31 +193,6 @@ async function pullOpenCTI() {
   } finally {
     btn.disabled = false;
     btn.innerHTML = '&#x1F310; OpenCTI';
-  }
-}
-
-async function pullAllSources() {
-  const btn = document.getElementById('pullAllBtn');
-  btn.disabled = true;
-  btn.textContent = 'Pulling all sources...';
-
-  try {
-    const res = await apiFetch('/api/sources/pull-all', { method: 'POST' });
-
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || 'Pull-all failed');
-    }
-
-    const data = await res.json();
-    toast(`Pull-all started (task ${data.task_id})`, 'success');
-    pollTask(data.task_id);
-
-  } catch (e) {
-    toast(e.message, 'error');
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = '&#x1F504; Pull All Sources';
   }
 }
 

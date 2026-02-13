@@ -27,6 +27,7 @@ class Settings:
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
     mimir_api_base_url: str = os.getenv("MIMIR_API_BASE_URL", "")
     api_token: str = os.getenv("MIMIR_API_TOKEN", "")
+    auth_disabled: bool = _env_bool("MIMIR_AUTH_DISABLED", "0")
     allow_localhost_without_token: bool = _env_bool(
         "MIMIR_ALLOW_LOCALHOST_WITHOUT_TOKEN", "1"
     )

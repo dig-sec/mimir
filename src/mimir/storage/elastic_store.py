@@ -3010,8 +3010,8 @@ class ElasticMetricsStore(_ElasticBase, MetricsStore):
         while True:
             composite_body: Dict[str, Any] = {
                 "sources": [
-                    {"entity_type": {"terms": {"field": "entity_type.keyword"}}},
-                    {"entity_id": {"terms": {"field": "entity_id.keyword"}}},
+                    {"entity_type": {"terms": {"field": "entity_type"}}},
+                    {"entity_id": {"terms": {"field": "entity_id"}}},
                 ],
                 "size": 2000,
             }
@@ -3229,10 +3229,10 @@ class ElasticMetricsStore(_ElasticBase, MetricsStore):
             sort=[
                 {"bucket_start": "desc"},
                 {"evidence_count": "desc"},
-                {"entity_name.keyword": "asc"},
+                {"entity_name": "asc"},
             ],
             aggs={
-                "active_actors": {"cardinality": {"field": "entity_id.keyword"}},
+                "active_actors": {"cardinality": {"field": "entity_id"}},
                 "evidence_total": {"sum": {"field": "evidence_count"}},
                 "latest_bucket": {"max": {"field": "bucket_start"}},
                 "latest_rollup": {"max": {"field": "rollup_generated_at"}},

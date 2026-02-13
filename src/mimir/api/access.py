@@ -35,9 +35,13 @@ def authorize_request(
     *,
     api_token: str,
     allow_localhost_without_token: bool,
+    auth_disabled: bool = False,
 ) -> tuple[bool, int, str]:
     path = request.url.path
     if request.method == "OPTIONS" or path.startswith("/static"):
+        return True, 200, ""
+
+    if auth_disabled:
         return True, 200, ""
 
     configured_token = api_token.strip()

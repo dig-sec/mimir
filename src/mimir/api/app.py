@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -17,6 +18,38 @@ logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
 
 
+async def _metrics_rollup_loop() -> None:
+    """Periodically trigger metrics rollups in the background."""
+    from .routes import metrics_store
+
+    interval = settings.metrics_rollup_interval_seconds
+    if not settings.metrics_rollup_enabled or interval <= 0:
+        logger.info("Metrics auto-rollup disabled.")
+        return
+
+    logger.info("Metrics auto-rollup started (every %ds)", interval)
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            metrics_store.rollup_daily_threat_actor_stats(
+                lookback_days=settings.metrics_rollup_lookback_days,
+                min_confidence=settings.metrics_rollup_min_confidence,
+            )
+            metrics_store.rollup_daily_pir_stats(
+                lookback_days=settings.metrics_rollup_lookback_days,
+                min_confidence=settings.metrics_rollup_min_confidence,
+            )
+            cti_fn = getattr(metrics_store, "rollup_daily_cti_assessments", None)
+            if cti_fn:
+                cti_fn(
+                    lookback_days=settings.metrics_rollup_lookback_days,
+                    min_confidence=settings.metrics_rollup_min_confidence,
+                )
+            logger.info("Metrics auto-rollup completed.")
+        except Exception:
+            logger.exception("Metrics auto-rollup failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Connector sync and LLM extraction are now handled by dedicated
@@ -25,10 +58,18 @@ async def lifespan(app: FastAPI):
     #
     # Manual sync endpoints in routes.py still work — they just trigger
     # one-shot syncs on demand.
-    logging.getLogger(__name__).info(
+    logger.info(
         "API started.  Data ingestion handled by separate worker processes."
     )
-    yield
+    rollup_task = asyncio.create_task(_metrics_rollup_loop())
+    try:
+        yield
+    finally:
+        rollup_task.cancel()
+        try:
+            await rollup_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="Mimir API", version="0.1.0", lifespan=lifespan)
@@ -40,6 +81,7 @@ async def enforce_access_controls(request: Request, call_next):
         request,
         api_token=settings.api_token,
         allow_localhost_without_token=settings.allow_localhost_without_token,
+        auth_disabled=settings.auth_disabled,
     )
     if allowed:
         return await call_next(request)
