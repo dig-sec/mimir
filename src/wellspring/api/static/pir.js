@@ -44,10 +44,9 @@ export function initPIR() {
 
   /* ── fetch ─────────────────────────────── */
   async function refreshTrending() {
-    /* Compute days from date range */
-    const from = new Date(dateFrom.value);
-    const to   = new Date(dateTo.value);
-    const days = Math.max(1, Math.round((to - from) / 86400000));
+    /* Send explicit date range so the backend uses the exact window */
+    const sinceStr = dateFrom.value;   /* YYYY-MM-DD */
+    const untilStr = dateTo.value;     /* YYYY-MM-DD */
     const topN = parseInt(topNInput.value, 10) || 10;
 
     refreshBtn.disabled = true;
@@ -57,7 +56,7 @@ export function initPIR() {
     list.querySelectorAll('.pir-question, .pir-banner, .empty-state').forEach(el => el.remove());
 
     try {
-      const query = new URLSearchParams({ days: String(days), top_n: String(topN) });
+      const query = new URLSearchParams({ since: sinceStr, until: untilStr, top_n: String(topN) });
       const res = await apiFetch('/api/pir/trending?' + query.toString());
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -138,7 +137,10 @@ export function initPIR() {
     itemEl.insertAdjacentElement('afterend', drawer);
 
     try {
-      const res = await apiFetch(`/api/pir/entity-context?entity_id=${encodeURIComponent(entityId)}`);
+      const ctxParams = new URLSearchParams({ entity_id: entityId });
+      if (dateFrom.value) ctxParams.set('since', dateFrom.value);
+      if (dateTo.value)   ctxParams.set('until', dateTo.value);
+      const res = await apiFetch(`/api/pir/entity-context?${ctxParams.toString()}`);
       if (!res.ok) throw new Error('Failed to load context');
       const data = await res.json();
       renderDetail(drawer, data, entityName);

@@ -227,8 +227,8 @@ async def process_run(
                 predicate = normalize_predicate(triple.predicate)
                 if not predicate:
                     continue
-                subject = resolver.resolve(triple.subject)
-                obj = resolver.resolve(triple.object)
+                subject = resolver.resolve(triple.subject, triple.subject_type)
+                obj = resolver.resolve(triple.object, triple.object_type)
                 chunk_entities.extend([subject, obj])
                 relation = Relation(
                     id=str(uuid4()),

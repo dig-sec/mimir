@@ -249,7 +249,25 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
                 "name": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
                 "type": {"type": "keyword"},
                 "aliases": {"type": "keyword"},
-                "attrs": {"type": "object"},
+                "attrs": {
+                    "type": "object",
+                    "properties": {
+                        "origin": {"type": "keyword"},
+                        "source_url": {"type": "keyword"},
+                        "feed_name": {"type": "keyword"},
+                        "published": {"type": "keyword"},
+                        "feedly_id": {"type": "keyword"},
+                        "mitre_id": {"type": "keyword"},
+                        "cvss_score": {"type": "float"},
+                        "has_exploit": {"type": "boolean"},
+                        "has_patch": {"type": "boolean"},
+                        "identity_class": {"type": "keyword"},
+                        "ioc_type": {"type": "keyword"},
+                        "opencti_id": {"type": "keyword"},
+                        "opencti_type": {"type": "keyword"},
+                        "description": {"type": "text"},
+                    },
+                },
                 "canonical_key": {"type": "keyword"},
                 "keys": {"type": "keyword"},
             },
@@ -261,7 +279,19 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
                 "predicate": {"type": "keyword"},
                 "object_id": {"type": "keyword"},
                 "confidence": {"type": "float"},
-                "attrs": {"type": "object"},
+                "attrs": {
+                    "type": "object",
+                    "properties": {
+                        "origin": {"type": "keyword"},
+                        "rule": {"type": "keyword"},
+                        "salience": {"type": "float"},
+                        "co_occurrence_count": {"type": "integer"},
+                        "relationship": {"type": "keyword"},
+                        "topic_source": {"type": "keyword"},
+                        "ioc_type": {"type": "keyword"},
+                        "opencti_rel_id": {"type": "keyword"},
+                    },
+                },
                 "triple_key": {"type": "keyword"},
             },
         )
@@ -843,16 +873,26 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
         days: int = 7,
         top_n: int = 10,
         source_uri: Optional[str] = None,
+        since: Optional[datetime] = None,
+        until: Optional[datetime] = None,
     ) -> Dict[str, Any]:
-        days = max(1, int(days))
         top_n = max(1, min(int(top_n), 50))
         now = datetime.now(timezone.utc)
-        current_since = now - timedelta(days=days)
+
+        # Use explicit since/until when provided, else fall back to days-from-now
+        if since and until:
+            current_since = since
+            current_until = until
+            days = max(1, int((current_until - current_since).total_seconds() / 86400))
+        else:
+            days = max(1, int(days))
+            current_until = now
+            current_since = now - timedelta(days=days)
         previous_since = current_since - timedelta(days=days)
 
         current_counts = self._count_relation_evidence_window(
             since=current_since,
-            until=now,
+            until=current_until,
             source_uri=source_uri,
         )
         previous_counts = self._count_relation_evidence_window(
@@ -971,7 +1011,7 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
             "window": {
                 "days": days,
                 "since": current_since.isoformat(),
-                "until": now.isoformat(),
+                "until": current_until.isoformat(),
             },
             "compare_window": {
                 "days": days,
@@ -1344,6 +1384,64 @@ class ElasticRunStore(_ElasticBase, RunStore):
             conflicts="proceed",
         )
         return count
+
+    def purge_document_text(self, run_id: str) -> bool:
+        """Delete the full document text for a finished run."""
+        try:
+            self.client.delete(
+                index=self.indices.documents,
+                id=run_id,
+                refresh="wait_for",
+            )
+            return True
+        except NotFoundError:
+            return False
+
+    def purge_stale_pending_runs(self, max_age_days: int = 14) -> int:
+        """Delete pending runs (and their documents) older than *max_age_days*."""
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
+        # Find the stale run IDs so we can also clean up their documents
+        stale_query: Dict[str, Any] = {
+            "bool": {
+                "filter": [
+                    {"term": {"status": "pending"}},
+                    {"range": {"started_at": {"lt": cutoff}}},
+                ]
+            }
+        }
+        # Delete matching documents first
+        stale_run_ids: List[str] = []
+        for hit in self._iter_search_hits(
+            self.indices.runs,
+            query=stale_query,
+            sort=[{"started_at": "asc"}],
+        ):
+            stale_run_ids.append(hit["_id"])
+
+        if not stale_run_ids:
+            return 0
+
+        # Purge documents and chunks for those runs
+        for rid in stale_run_ids:
+            try:
+                self.client.delete(index=self.indices.documents, id=rid)
+            except NotFoundError:
+                pass
+        self.client.delete_by_query(
+            index=self.indices.chunks,
+            query={"terms": {"run_id": stale_run_ids}},
+            refresh=True,
+            conflicts="proceed",
+        )
+
+        # Delete the runs themselves
+        response = self.client.delete_by_query(
+            index=self.indices.runs,
+            query=stale_query,
+            refresh=True,
+            conflicts="proceed",
+        )
+        return int(response.get("deleted", 0))
 
     def count_runs(
         self,

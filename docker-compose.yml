@@ -15,7 +15,7 @@ services:
   # Scale horizontally: docker compose up --scale llm-worker=3
   llm-worker:
     build: .
-    restart: unless-stopped
+    restart: on-failure
     command: ["python", "-m", "wellspring.worker.llm_worker"]
     env_file: .env
     environment:
@@ -29,7 +29,7 @@ services:
   # ── Feedly connector worker ────────────────────────────────
   feedly-worker:
     build: .
-    restart: unless-stopped
+    restart: on-failure
     command: ["python", "-m", "wellspring.worker.feedly_worker"]
     env_file: .env
     environment:
@@ -43,7 +43,7 @@ services:
   # ── OpenCTI connector worker ───────────────────────────────
   opencti-worker:
     build: .
-    restart: unless-stopped
+    restart: on-failure
     command: ["python", "-m", "wellspring.worker.opencti_worker"]
     env_file: .env
     environment:
@@ -56,7 +56,7 @@ services:
   # ── Elasticsearch source worker ────────────────────────────
   elastic-worker:
     build: .
-    restart: unless-stopped
+    restart: on-failure
     command: ["python", "-m", "wellspring.worker.elastic_worker"]
     env_file: .env
     environment:

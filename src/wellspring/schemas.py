@@ -28,6 +28,8 @@ class Triple(BaseModel):
     predicate: str
     object: str
     confidence: float = 0.5
+    subject_type: Optional[str] = None
+    object_type: Optional[str] = None
 
 
 class Provenance(BaseModel):

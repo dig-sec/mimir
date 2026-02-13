@@ -1744,6 +1744,8 @@ def pir_trending(
     days: int = Query(default=7, ge=1, le=90),
     top_n: int = Query(default=10, ge=1, le=50),
     source_uri: Optional[str] = Query(default=None),
+    since: Optional[str] = Query(default=None),
+    until: Optional[str] = Query(default=None),
 ):
     """Priority Intelligence Requirements: trending entities for current vs previous window."""
     pir_fn = getattr(graph_store, "get_pir_trending_summary", None)
@@ -1752,11 +1754,27 @@ def pir_trending(
             status_code=501,
             detail="PIR trending is only available on Elasticsearch backend",
         )
-    return pir_fn(days=days, top_n=top_n, source_uri=source_uri)
+    kwargs: dict = {"top_n": top_n, "source_uri": source_uri}
+    if since and until:
+        from datetime import datetime as _dt, timezone as _tz
+        try:
+            _since = _dt.fromisoformat(since).replace(tzinfo=_tz.utc) if "T" in since else _dt.fromisoformat(since + "T00:00:00").replace(tzinfo=_tz.utc)
+            _until = _dt.fromisoformat(until).replace(tzinfo=_tz.utc) if "T" in until else _dt.fromisoformat(until + "T23:59:59").replace(tzinfo=_tz.utc)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid since/until date format")
+        kwargs["since"] = _since
+        kwargs["until"] = _until
+    else:
+        kwargs["days"] = days
+    return pir_fn(**kwargs)
 
 
 @router.get("/api/pir/entity-context")
-def pir_entity_context(entity_id: str = Query(...)):
+def pir_entity_context(
+    entity_id: str = Query(...),
+    since: Optional[str] = Query(default=None),
+    until: Optional[str] = Query(default=None),
+):
     """Return lightweight context for a PIR entity: attrs, neighbors, sources."""
     entity = graph_store.get_entity(entity_id)
     if not entity:
@@ -1806,6 +1824,21 @@ def pir_entity_context(entity_id: str = Query(...)):
 
     # Sort neighbors by confidence desc
     neighbors.sort(key=lambda n: -n["confidence"])
+
+    # Filter sources by date window when provided
+    if since or until:
+        filtered_sources = []
+        for s in sources:
+            ts = s.get("timestamp")
+            if not ts:
+                continue  # skip undated sources when a window is specified
+            ts_str = str(ts)[:10]  # YYYY-MM-DD prefix
+            if since and ts_str < since[:10]:
+                continue
+            if until and ts_str > until[:10]:
+                continue
+            filtered_sources.append(s)
+        sources = filtered_sources
 
     # Sort sources newest first
     sources.sort(key=lambda s: s.get("timestamp") or "", reverse=True)

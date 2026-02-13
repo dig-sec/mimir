@@ -124,6 +124,7 @@ class Settings:
     # LLM extraction worker
     llm_worker_concurrency: int = int(os.getenv("LLM_WORKER_CONCURRENCY", "3"))
     llm_worker_poll_seconds: int = int(os.getenv("LLM_WORKER_POLL_SECONDS", "2"))
+    max_pending_age_days: int = int(os.getenv("MAX_PENDING_AGE_DAYS", "14"))
 
     # Feedly connector worker
     feedly_worker_interval_minutes: int = int(

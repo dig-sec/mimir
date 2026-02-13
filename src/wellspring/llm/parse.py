@@ -115,6 +115,78 @@ def _is_junk_predicate(pred: str) -> bool:
     return pred.strip().lower() in _JUNK_PREDICATES
 
 
+# ── Valid entity types (matches prompt) ───────────────────────────
+_VALID_ENTITY_TYPES = frozenset([
+    "threat_actor", "malware", "tool", "vulnerability", "attack_pattern",
+    "campaign", "identity", "infrastructure", "indicator", "location",
+    "report", "mitigation", "topic",
+])
+
+# ── Predicate-to-type inference (fallback when LLM omits types) ──
+_PREDICATE_SUBJECT_TYPE: Dict[str, str] = {
+    "uses_technique": "threat_actor",
+    "employs_tool": "threat_actor",
+    "exploits_vulnerability": "malware",
+    "targets_sector": "threat_actor",
+    "is_attributed_to": "campaign",
+    "attributed_to": "malware",
+    "drops": "malware",
+    "downloads": "malware",
+    "communicates_with": "malware",
+    "developed_by": "malware",
+    "distributed_via": "malware",
+    "variant_of": "malware",
+    "mitigated_by": "attack_pattern",
+    "belongs_to_tactic": "attack_pattern",
+    "has_capability": "malware",
+    "implements_capability": "malware",
+    "mapped_to_technique": "malware",
+}
+_PREDICATE_OBJECT_TYPE: Dict[str, str] = {
+    "uses_technique": "attack_pattern",
+    "employs_tool": "tool",
+    "exploits_vulnerability": "vulnerability",
+    "targets_sector": "identity",
+    "is_attributed_to": "threat_actor",
+    "attributed_to": "threat_actor",
+    "drops": "malware",
+    "downloads": "malware",
+    "communicates_with": "infrastructure",
+    "developed_by": "threat_actor",
+    "distributed_via": "infrastructure",
+    "variant_of": "malware",
+    "mitigated_by": "mitigation",
+    "belongs_to_tactic": "attack_pattern",
+    "has_capability": "attack_pattern",
+    "implements_capability": "attack_pattern",
+    "mapped_to_technique": "attack_pattern",
+    "targets": "identity",
+    "exploits": "vulnerability",
+    "uses": "tool",
+}
+
+
+def _normalize_entity_type(raw: Any) -> Optional[str]:
+    """Validate and normalize an entity type string."""
+    if not raw or not isinstance(raw, str):
+        return None
+    cleaned = raw.strip().lower().replace(" ", "_").replace("-", "_")
+    return cleaned if cleaned in _VALID_ENTITY_TYPES else None
+
+
+def _infer_types_from_predicate(
+    predicate: str,
+    subject_type: Optional[str],
+    object_type: Optional[str],
+) -> tuple[Optional[str], Optional[str]]:
+    """Fill in missing entity types using predicate heuristics."""
+    if not subject_type:
+        subject_type = _PREDICATE_SUBJECT_TYPE.get(predicate)
+    if not object_type:
+        object_type = _PREDICATE_OBJECT_TYPE.get(predicate)
+    return subject_type, object_type
+
+
 def extract_triples(raw: str) -> List[Triple]:
     data = parse_json_safe(raw)
     triples: List[Triple] = []
@@ -139,5 +211,17 @@ def extract_triples(raw: str) -> List[Triple]:
             continue
         if triple.confidence < 0.4:
             continue
+        # --- entity type normalisation ---
+        subj_type = _normalize_entity_type(triple.subject_type)
+        obj_type = _normalize_entity_type(triple.object_type)
+        subj_type, obj_type = _infer_types_from_predicate(
+            triple.predicate.strip().lower().replace(" ", "_"),
+            subj_type,
+            obj_type,
+        )
+        triple = triple.model_copy(update={
+            "subject_type": subj_type,
+            "object_type": obj_type,
+        })
         triples.append(triple)
     return triples

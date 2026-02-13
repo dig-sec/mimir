@@ -50,11 +50,19 @@ Each triple object MUST have exactly these keys:
   "predicate": string — verb-like relation
   "object": string — the entity name
   "confidence": number between 0.0 and 1.0
+  "subject_type": string — one of the valid entity types below
+  "object_type": string — one of the valid entity types below
+
+Valid entity types (use exactly one per entity):
+  threat_actor, malware, tool, vulnerability, attack_pattern,
+  campaign, identity, infrastructure, indicator, location,
+  report, mitigation, topic
 
 Rules:
 - Output ONLY valid JSON. No markdown, no commentary, no extra keys.
 - If no meaningful triples can be extracted, return {"triples": []}.
 - Aim for quality over quantity — 3-8 high-quality triples is better than 20 noisy ones.
+- Always include subject_type and object_type from the valid list above.
 
 Text chunk:
 {{ chunk_text }}

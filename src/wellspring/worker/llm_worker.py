@@ -127,6 +127,22 @@ async def llm_worker_loop() -> None:
     except Exception:
         logger.exception("Failed to recover stale runs at startup")
 
+    # Purge very old pending runs that will never be processed
+    if settings.max_pending_age_days > 0:
+        try:
+            purged = await asyncio.to_thread(
+                run_store.purge_stale_pending_runs,
+                settings.max_pending_age_days,
+            )
+            if purged:
+                logger.info(
+                    "Purged %d stale pending run(s) older than %d days",
+                    purged,
+                    settings.max_pending_age_days,
+                )
+        except Exception:
+            logger.exception("Failed to purge stale pending runs at startup")
+
     # Start metrics rollup only if this replica is the designated leader.
     # When scaling llm-workers (--scale llm-worker=N), set
     # METRICS_ROLLUP_LEADER=1 on exactly one replica to avoid duplicate
@@ -165,17 +181,23 @@ async def llm_worker_loop() -> None:
                     settings,
                 )
             except Exception as exc:
+                error_msg = str(exc) if str(exc) else f"{type(exc).__name__} (no detail)"
                 try:
                     await asyncio.to_thread(
                         run_store.update_run_status,
                         run_id,
                         "failed",
-                        str(exc),
+                        error_msg,
                     )
                 except Exception:
                     logger.exception("Run %s failed and status update failed", run_id)
                 else:
-                    logger.exception("Run %s failed", run_id)
+                    logger.exception("Run %s failed: %s", run_id, error_msg)
+                # Purge document text even on failure to reclaim storage
+                try:
+                    await asyncio.to_thread(run_store.purge_document_text, run_id)
+                except Exception:
+                    logger.debug("Run %s: failed to purge document text", run_id)
                 return
 
             try:
@@ -184,6 +206,12 @@ async def llm_worker_loop() -> None:
                 logger.exception("Run %s processed but failed to mark completed", run_id)
             else:
                 logger.info("Run %s completed", run_id)
+
+            # Purge document text after successful completion to reclaim storage
+            try:
+                await asyncio.to_thread(run_store.purge_document_text, run_id)
+            except Exception:
+                logger.debug("Run %s: failed to purge document text", run_id)
 
     try:
         while not _shutdown.is_set():
