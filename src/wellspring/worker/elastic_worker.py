@@ -31,6 +31,21 @@ def _handle_signal() -> None:
     _shutdown.set()
 
 
+def _install_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
+    """Install shutdown handlers with a portable fallback."""
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, _handle_signal)
+        except (NotImplementedError, RuntimeError, ValueError):
+            try:
+                signal.signal(sig, lambda *_: _handle_signal())
+            except (ValueError, OSError):
+                logger.warning(
+                    "Elasticsearch worker: unable to install signal handler for %s",
+                    sig.name,
+                )
+
+
 def _create_source_client(settings) -> ElasticsearchSourceClient:
     """Build an ElasticsearchSourceClient from connector settings."""
     return ElasticsearchSourceClient(
@@ -46,6 +61,7 @@ async def elastic_worker_loop() -> None:
     """Periodically pull documents from Elasticsearch source indices."""
     settings = get_settings()
     logging.basicConfig(level=settings.log_level)
+    _shutdown.clear()
 
     if not settings.elastic_connector_enabled:
         logger.info(
@@ -59,13 +75,19 @@ async def elastic_worker_loop() -> None:
         )
         return
 
+    interval_minutes = settings.elastic_worker_interval_minutes
+    interval = interval_minutes * 60
+    if interval <= 0:
+        logger.info(
+            "Elasticsearch worker: disabled (ELASTIC_WORKER_INTERVAL_MINUTES=%d). Exiting.",
+            interval_minutes,
+        )
+        return
+
     run_store = create_run_store(settings)
 
     loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, _handle_signal)
-
-    interval = settings.elastic_worker_interval_minutes * 60
+    _install_signal_handlers(loop)
 
     # Exclude Feedly indices so we don't double-queue articles that the
     # Feedly worker already handles with its own structured extraction.
@@ -82,7 +104,7 @@ async def elastic_worker_loop() -> None:
 
     logger.info(
         "Elasticsearch source worker started — interval=%dm, indices=%s",
-        settings.elastic_worker_interval_minutes,
+        interval_minutes,
         indices,
     )
 

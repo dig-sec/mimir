@@ -6,7 +6,7 @@ inline OpenCTI sync that previously ran inside the API scheduler.
 
 The worker:
 * Runs on its own schedule (``OPENCTI_WORKER_INTERVAL_MINUTES``, default 30)
-* Pulls configurable entity types from OpenCTI GraphQL API
+* Pulls a default CTI entity set from OpenCTI GraphQL API
 * Optionally queues report text for LLM extraction
 * Gracefully shuts down on SIGINT/SIGTERM
 """
@@ -46,10 +46,26 @@ def _handle_signal() -> None:
     _shutdown.set()
 
 
+def _install_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
+    """Install shutdown handlers with a portable fallback."""
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, _handle_signal)
+        except (NotImplementedError, RuntimeError, ValueError):
+            try:
+                signal.signal(sig, lambda *_: _handle_signal())
+            except (ValueError, OSError):
+                logger.warning(
+                    "OpenCTI worker: unable to install signal handler for %s",
+                    sig.name,
+                )
+
+
 async def opencti_worker_loop() -> None:
     """Periodically sync entities and relations from OpenCTI."""
     settings = get_settings()
     logging.basicConfig(level=settings.log_level)
+    _shutdown.clear()
 
     if not settings.opencti_url or not settings.opencti_token:
         logger.info(
@@ -57,18 +73,24 @@ async def opencti_worker_loop() -> None:
         )
         return
 
+    interval_minutes = settings.opencti_worker_interval_minutes
+    interval = interval_minutes * 60
+    if interval <= 0:
+        logger.info(
+            "OpenCTI worker: disabled (OPENCTI_WORKER_INTERVAL_MINUTES=%d). Exiting.",
+            interval_minutes,
+        )
+        return
+
     graph_store = create_graph_store(settings)
     run_store = create_run_store(settings)
 
     loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, _handle_signal)
-
-    interval = settings.opencti_worker_interval_minutes * 60
+    _install_signal_handlers(loop)
 
     logger.info(
         "OpenCTI worker started — interval=%dm, url=%s",
-        settings.opencti_worker_interval_minutes,
+        interval_minutes,
         settings.opencti_url,
     )
 

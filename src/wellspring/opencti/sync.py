@@ -381,27 +381,37 @@ def _sync_reports(
         # Queue report text for LLM extraction
         report_text = rpt.get("text", "").strip()
         if report_text and run_store and settings and len(report_text) > 50:
-            run_id = str(uuid4())
-            run = ExtractionRun(
-                run_id=run_id,
-                started_at=datetime.utcnow(),
-                model=settings.ollama_model,
-                prompt_version=settings.prompt_version,
-                params={
-                    "chunk_size": settings.chunk_size,
-                    "chunk_overlap": settings.chunk_overlap,
-                },
-                status="pending",
-                error=None,
-            )
-            source_uri = f"opencti://report/{rpt['id']}"
-            run_store.create_run(
-                run,
-                source_uri,
-                report_text,
-                {"opencti_report": rpt["name"], "opencti_id": rpt["id"]},
-            )
-            result.reports_queued += 1
+            source_uri = f"opencti://report/{rpt.get('id', 'unknown')}"
+            # Deterministic run ID prevents re-queuing unchanged reports
+            # every worker cycle while still allowing updated text to requeue.
+            dedupe_material = f"{source_uri}|{report_text}"
+            run_id = "opencti-report-" + hashlib.sha1(
+                dedupe_material.encode("utf-8")
+            ).hexdigest()
+
+            if not run_store.get_run(run_id):
+                run = ExtractionRun(
+                    run_id=run_id,
+                    started_at=datetime.utcnow(),
+                    model=settings.ollama_model,
+                    prompt_version=settings.prompt_version,
+                    params={
+                        "chunk_size": settings.chunk_size,
+                        "chunk_overlap": settings.chunk_overlap,
+                    },
+                    status="pending",
+                    error=None,
+                )
+                run_store.create_run(
+                    run,
+                    source_uri,
+                    report_text,
+                    {
+                        "opencti_report": rpt.get("name", ""),
+                        "opencti_id": rpt.get("id", ""),
+                    },
+                )
+                result.reports_queued += 1
 
         if count % 10 == 0:
             _progress(
