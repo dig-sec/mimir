@@ -2,10 +2,8 @@
   "servers": {
     "mimir": {
       "type": "stdio",
-      "command": "${workspaceFolder}/.venv/bin/python",
-      "args": ["-m", "mimir.mcp.server"],
-      "cwd": "${workspaceFolder}",
-      "envFile": "${workspaceFolder}/.env"
+      "command": "${workspaceFolder}/scripts/run_mcp.sh",
+      "cwd": "${workspaceFolder}"
     }
   }
 }

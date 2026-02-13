@@ -1160,3 +1160,300 @@ main { display: flex; flex: 1; overflow: hidden; }
 .toast.error { background: var(--danger); }
 .toast.success { background: var(--success); }
 @keyframes slideIn { from { transform: translateX(40px); opacity: 0; } }
+
+/* ── Ask tab ──────────────────────────────── */
+.ask-dashboard {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+.ask-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  max-width: 860px;
+  width: 100%;
+  margin: 0 auto;
+  overflow: hidden;
+}
+.ask-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 24px 12px;
+  flex-shrink: 0;
+}
+.ask-header h2 {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0;
+}
+.ask-model-badge {
+  margin-left: auto;
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--muted);
+  background: rgba(0,0,0,0.05);
+  padding: 3px 10px;
+  border-radius: 12px;
+}
+
+/* ── messages area ─────────────────────── */
+.ask-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 24px 16px;
+  scroll-behavior: smooth;
+}
+
+/* ── welcome screen ────────────────────── */
+.ask-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  color: var(--muted);
+  gap: 12px;
+  padding: 60px 0;
+}
+.ask-welcome-icon {
+  opacity: 0.2;
+}
+.ask-welcome h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+.ask-welcome p {
+  font-size: 13px;
+  max-width: 400px;
+  line-height: 1.5;
+}
+.ask-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 8px;
+  max-width: 520px;
+}
+.ask-suggestion {
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--card);
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--ink);
+  transition: all 0.15s;
+}
+.ask-suggestion:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(37, 99, 235, 0.04);
+}
+
+/* ── message bubbles ───────────────────── */
+.ask-msg {
+  margin-bottom: 16px;
+  animation: askFadeIn 0.2s ease;
+}
+@keyframes askFadeIn { from { opacity: 0; transform: translateY(8px); } }
+
+.ask-msg-user .ask-msg-content {
+  background: var(--accent);
+  color: white;
+  padding: 10px 16px;
+  border-radius: 16px 16px 4px 16px;
+  margin-left: auto;
+  max-width: 75%;
+  width: fit-content;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.ask-msg-assistant .ask-msg-content {
+  background: var(--card);
+  border: 1px solid var(--border);
+  padding: 14px 18px;
+  border-radius: 16px 16px 16px 4px;
+  max-width: 90%;
+  font-size: 13px;
+  line-height: 1.7;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.ask-msg-assistant .ask-msg-content h2,
+.ask-msg-assistant .ask-msg-content h3,
+.ask-msg-assistant .ask-msg-content h4 {
+  margin: 12px 0 6px;
+  font-size: 14px;
+}
+.ask-msg-assistant .ask-msg-content h2:first-child,
+.ask-msg-assistant .ask-msg-content h3:first-child,
+.ask-msg-assistant .ask-msg-content h4:first-child {
+  margin-top: 0;
+}
+.ask-msg-assistant .ask-msg-content p { margin: 6px 0; }
+.ask-msg-assistant .ask-msg-content ul {
+  margin: 6px 0;
+  padding-left: 20px;
+}
+.ask-msg-assistant .ask-msg-content li {
+  margin: 3px 0;
+}
+.ask-msg-assistant .ask-msg-content code {
+  background: rgba(0,0,0,0.06);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+.ask-msg-assistant .ask-msg-content strong {
+  font-weight: 600;
+}
+
+/* ── thinking indicator ────────────────── */
+.ask-thinking {
+  color: var(--muted);
+  font-style: italic;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ask-thinking::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+  border-radius: 50%;
+  animation: askPulse 1s infinite;
+}
+@keyframes askPulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+/* ── error display ─────────────────────── */
+.ask-error {
+  color: var(--danger);
+  font-size: 13px;
+  padding: 8px 12px;
+  background: rgba(220, 38, 38, 0.06);
+  border-radius: 6px;
+  border-left: 3px solid var(--danger);
+}
+
+/* ── source context chips ──────────────── */
+.ask-msg-sources {
+  margin-bottom: 10px;
+  padding: 10px 14px;
+  background: rgba(37, 99, 235, 0.04);
+  border: 1px solid rgba(37, 99, 235, 0.12);
+  border-radius: 10px;
+  max-width: 90%;
+}
+.ask-source-summary {
+  display: flex;
+  gap: 14px;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.ask-source-stat {
+  white-space: nowrap;
+}
+.ask-source-entities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.ask-entity-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.ask-chip-type {
+  color: var(--muted);
+  font-size: 10px;
+}
+.ask-chip-more {
+  color: var(--muted);
+  background: rgba(0,0,0,0.03);
+  border: 1px dashed var(--border);
+}
+.ask-source-empty {
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* ── input area ────────────────────────── */
+.ask-input-area {
+  padding: 12px 24px 18px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: rgba(255,255,255,0.6);
+}
+.ask-input-wrap {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 8px 8px 14px;
+  transition: border-color 0.15s;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+.ask-input-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+}
+.ask-input-wrap textarea {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.5;
+  resize: none;
+  background: transparent;
+  min-height: 24px;
+  max-height: 160px;
+}
+.ask-send-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.ask-send-btn:hover { background: var(--accent-hover); }
+.ask-send-btn:disabled {
+  background: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.ask-input-hint {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 6px;
+  text-align: center;
+}

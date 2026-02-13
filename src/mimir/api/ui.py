@@ -25,6 +25,7 @@ def render_root_ui(root_path: str = "", api_base_url: str = "") -> str:
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Mimir</title>
+  <link rel="icon" href="{static_prefix}/images/favicon.ico" type="image/x-icon" />
   <link rel="stylesheet" href="{static_prefix}/style.css" />
 </head>
 <body>
@@ -35,6 +36,7 @@ def render_root_ui(root_path: str = "", api_base_url: str = "") -> str:
     <div class="tab-bar">
       <button class="tab-btn active" data-tab="explore">Explore</button>
       <button class="tab-btn" data-tab="pir">PIR</button>
+      <button class="tab-btn" data-tab="ask">Ask</button>
     </div>
     <div class="spacer"></div>
     <span id="statsBar" style="font-size:12px;color:#6b7280;font-family:monospace"></span>
@@ -221,6 +223,41 @@ def render_root_ui(root_path: str = "", api_base_url: str = "") -> str:
         </div>
       </div>
     </aside>
+
+    <!-- == ASK PANEL (full-width) == -->
+    <div class="ask-dashboard" id="askDashboard" style="display:none">
+      <div class="ask-container">
+        <div class="ask-header">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          <h2>Ask Mimir</h2>
+          <span class="ask-model-badge" id="askModelBadge">phi4 via Ollama</span>
+        </div>
+        <div class="ask-messages" id="askMessages">
+          <div class="ask-welcome">
+            <div class="ask-welcome-icon">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+            </div>
+            <h3>Ask questions about your knowledge graph</h3>
+            <p>Mimir will search entities, relationships, and provenance to answer your question using phi4.</p>
+            <div class="ask-suggestions">
+              <button class="ask-suggestion" data-q="What are the most significant threat actors in the knowledge graph?">Top threat actors</button>
+              <button class="ask-suggestion" data-q="What malware families are tracked and how are they related?">Malware families</button>
+              <button class="ask-suggestion" data-q="What attack patterns and techniques are most referenced?">Attack patterns</button>
+              <button class="ask-suggestion" data-q="What vulnerabilities are linked to active campaigns?">Active vulnerabilities</button>
+            </div>
+          </div>
+        </div>
+        <div class="ask-input-area">
+          <div class="ask-input-wrap">
+            <textarea id="askInput" placeholder="Ask a question about your threat intelligence..." rows="1"></textarea>
+            <button class="ask-send-btn" id="askSendBtn" title="Send">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          </div>
+          <div class="ask-input-hint">Press Enter to send &middot; Shift+Enter for new line</div>
+        </div>
+      </div>
+    </div>
 
     <!-- == PIR DASHBOARD (full-width) == -->
     <div class="pir-dashboard" id="pirDashboard" style="display:none">

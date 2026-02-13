@@ -16,7 +16,9 @@ import logging
 import signal
 from contextlib import suppress
 
-from ..config import get_settings
+import httpx
+
+from ..config import get_settings, validate_settings
 from ..pipeline.runner import run_sync
 from ..storage.factory import create_graph_store, create_metrics_store, create_run_store
 from ..storage.metrics_store import MetricsStore
@@ -24,6 +26,20 @@ from ..storage.metrics_store import MetricsStore
 logger = logging.getLogger(__name__)
 
 _shutdown = asyncio.Event()
+
+
+async def _check_ollama_health(base_url: str, timeout: float) -> bool:
+    """Check if Ollama is available and responding.
+    
+    Returns True if healthy, False if unreachable.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.get(f"{base_url}/api/tags")
+            return response.status_code == 200
+    except Exception as exc:
+        logger.debug("Ollama health check failed: %s", exc)
+        return False
 
 
 def _handle_signal() -> None:
@@ -68,6 +84,11 @@ async def metrics_rollup_loop(metrics_store: MetricsStore) -> None:
         cti_lookback_days,
     )
     while not _shutdown.is_set():
+        threat_actor_summary = None
+        pir_summary = None
+        cti_summary = None
+
+        # Wrap each rollup independently so failures don't cascade
         try:
             threat_actor_summary = await asyncio.to_thread(
                 metrics_store.rollup_daily_threat_actor_stats,
@@ -75,43 +96,65 @@ async def metrics_rollup_loop(metrics_store: MetricsStore) -> None:
                 min_confidence,
                 None,
             )
+        except Exception:
+            logger.exception("Threat actor metrics rollup failed")
+
+        try:
             pir_summary = await asyncio.to_thread(
                 metrics_store.rollup_daily_pir_stats,
                 lookback_days,
                 min_confidence,
                 None,
             )
-            cti_summary = None
+        except Exception:
+            logger.exception("PIR metrics rollup failed")
+
+        if cti_enabled:
             cti_rollup_fn = getattr(metrics_store, "rollup_daily_cti_assessments", None)
-            if cti_enabled and callable(cti_rollup_fn):
-                cti_summary = await asyncio.to_thread(
-                    cti_rollup_fn,
-                    cti_lookback_days,
-                    min_confidence,
-                    None,
-                    max(settings.cti_decay_half_life_days, 1),
-                )
+            if callable(cti_rollup_fn):
+                try:
+                    cti_summary = await asyncio.to_thread(
+                        cti_rollup_fn,
+                        cti_lookback_days,
+                        min_confidence,
+                        None,
+                        max(settings.cti_decay_half_life_days, 1),
+                    )
+                except Exception:
+                    logger.exception("CTI metrics rollup failed")
+
+        # Log summary of completed rollups
+        if threat_actor_summary or pir_summary or cti_summary:
             logger.info(
                 (
-                    "Metrics rollup complete: threat_actor=%d docs/%d buckets/%d actors, "
-                    "pir=%d docs/%d buckets/%d entities%s"
+                    "Metrics rollup complete:%s%s%s"
                 ),
-                int(threat_actor_summary.get("docs_written", 0)),
-                int(threat_actor_summary.get("buckets_written", 0)),
-                int(threat_actor_summary.get("actors_total", 0)),
-                int(pir_summary.get("docs_written", 0)),
-                int(pir_summary.get("buckets_written", 0)),
-                int(pir_summary.get("entities_total", 0)),
                 (
-                    f", cti={int(cti_summary.get('docs_written', 0))} docs/"
+                    f" threat_actor={int(threat_actor_summary.get('docs_written', 0))} docs/"
+                    f"{int(threat_actor_summary.get('buckets_written', 0))} buckets/"
+                    f"{int(threat_actor_summary.get('actors_total', 0))} actors"
+                    if threat_actor_summary
+                    else ""
+                ),
+                (
+                    f" pir={int(pir_summary.get('docs_written', 0))} docs/"
+                    f"{int(pir_summary.get('buckets_written', 0))} buckets/"
+                    f"{int(pir_summary.get('entities_total', 0))} entities"
+                    if pir_summary
+                    else ""
+                ),
+                (
+                    f" cti={int(cti_summary.get('docs_written', 0))} docs/"
                     f"{int(cti_summary.get('buckets_written', 0))} buckets/"
                     f"{int(cti_summary.get('assessments_total', 0))} assessments"
-                    if cti_summary is not None
+                    if cti_summary
                     else ""
                 ),
             )
-        except Exception:
-            logger.exception("Metrics rollup failed")
+        else:
+            logger.warning("All metrics rollups failed")
+
+        # Wait for next interval
         try:
             await asyncio.wait_for(_shutdown.wait(), timeout=interval)
             return  # shutdown requested
@@ -124,6 +167,41 @@ async def llm_worker_loop() -> None:
     settings = get_settings()
     logging.basicConfig(level=settings.log_level)
     _shutdown.clear()
+
+    # Validate settings at startup
+    try:
+        validate_settings(settings)
+    except ValueError as exc:
+        logger.error("Configuration error: %s", exc)
+        return
+
+    # Check Ollama is available before starting
+    logger.info("Checking Ollama availability at %s...", settings.ollama_base_url)
+    try:
+        is_healthy = await asyncio.wait_for(
+            _check_ollama_health(
+                settings.ollama_base_url,
+                settings.startup_health_check_timeout_seconds,
+            ),
+            timeout=settings.startup_health_check_timeout_seconds,
+        )
+        if not is_healthy:
+            logger.error(
+                "Ollama at %s returned unhealthy status; unable to proceed",
+                settings.ollama_base_url,
+            )
+            return
+    except asyncio.TimeoutError:
+        logger.error(
+            "Ollama health check timed out at %s; unable to proceed",
+            settings.ollama_base_url,
+        )
+        return
+    except Exception as exc:
+        logger.error("Ollama health check failed: %s; unable to proceed", exc)
+        return
+
+    logger.info("Ollama is healthy and ready")
 
     graph_store = create_graph_store(settings)
     run_store = create_run_store(settings)
@@ -157,18 +235,29 @@ async def llm_worker_loop() -> None:
 
     # Recover any stale runs from previous crashes
     try:
-        recovered = await asyncio.to_thread(run_store.recover_stale_runs)
+        recovered = await asyncio.wait_for(
+            asyncio.to_thread(run_store.recover_stale_runs),
+            timeout=settings.startup_health_check_timeout_seconds,
+        )
         if recovered:
             logger.info("Recovered %d stale run(s) back to pending", recovered)
+    except asyncio.TimeoutError:
+        logger.warning(
+            "Stale run recovery timed out after %.0fs, continuing anyway",
+            settings.startup_health_check_timeout_seconds,
+        )
     except Exception:
         logger.exception("Failed to recover stale runs at startup")
 
     # Purge very old pending runs that will never be processed
     if settings.max_pending_age_days > 0:
         try:
-            purged = await asyncio.to_thread(
-                run_store.purge_stale_pending_runs,
-                settings.max_pending_age_days,
+            purged = await asyncio.wait_for(
+                asyncio.to_thread(
+                    run_store.purge_stale_pending_runs,
+                    settings.max_pending_age_days,
+                ),
+                timeout=settings.startup_health_check_timeout_seconds,
             )
             if purged:
                 logger.info(
@@ -176,6 +265,11 @@ async def llm_worker_loop() -> None:
                     purged,
                     settings.max_pending_age_days,
                 )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Stale pending run purge timed out after %.0fs, continuing anyway",
+                settings.startup_health_check_timeout_seconds,
+            )
         except Exception:
             logger.exception("Failed to purge stale pending runs at startup")
 

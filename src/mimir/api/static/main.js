@@ -3,6 +3,7 @@ import { initUpload, initRuns } from './ingest.js';
 import { initGraph, loadGraph } from './graph.js';
 import { initOpenCTI } from './opencti.js';
 import { initPIR } from './pir.js';
+import { initAsk } from './ask.js';
 
 /* ── bootstrap ────────────────────────── */
 initTabs();
@@ -16,3 +17,4 @@ initUpload();
 initRuns();
 initOpenCTI();
 initPIR();
+initAsk();

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 import math
 from collections import Counter
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Tuple, TypeVar
 from uuid import UUID, uuid5
 
 from elasticsearch import ApiError, ConflictError, Elasticsearch, NotFoundError
@@ -23,9 +25,13 @@ from .base import GraphStore
 from .metrics_store import MetricsStore
 from .run_store import RunStore
 
+logger = logging.getLogger(__name__)
+
 # Namespace UUID for deterministic entity/relation IDs
 _NS_ENTITY = UUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
 _NS_RELATION = UUID("b2c3d4e5-f6a7-8901-bcde-f12345678901")
+
+T = TypeVar("T")
 
 
 def _parse_datetime(value: Any) -> datetime:
@@ -97,11 +103,75 @@ def _create_client(
     kwargs: Dict[str, Any] = {
         "hosts": hosts,
         "verify_certs": verify_certs,
-        "request_timeout": 30,
+        "request_timeout": 60,  # Increased from 30 to 60 for bulk ops
     }
     if username:
         kwargs["basic_auth"] = (username, password or "")
     return Elasticsearch(**kwargs)
+
+
+def _retry_with_backoff(
+    func: Callable[..., T],
+    *args,
+    max_attempts: int = 3,
+    initial_delay: float = 1.0,
+    **kwargs,
+) -> T:
+    """Retry a function with exponential backoff for transient ES errors.
+    
+    Retries on:
+    - ApiError with status 429 (too many requests) or 503 (service unavailable)
+    - ConnectionError or timeout
+    
+    Raises immediately on:
+    - NotFoundError
+    - ConflictError
+    - Other exceptions
+    """
+    delay = initial_delay
+    last_exception: Optional[Exception] = None
+
+    for attempt in range(max(max_attempts, 1)):
+        try:
+            return func(*args, **kwargs)
+        except (NotFoundError, ConflictError):
+            # Don't retry these
+            raise
+        except ApiError as exc:
+            # Only retry on transient errors
+            if exc.status_code not in (429, 503):
+                raise
+            last_exception = exc
+            if attempt < max_attempts - 1:
+                logger.debug(
+                    "ES request failed with %d (attempt %d/%d), retrying in %.1fs",
+                    exc.status_code,
+                    attempt + 1,
+                    max_attempts,
+                    delay,
+                )
+                import time
+                time.sleep(delay)
+                delay *= 2  # Exponential backoff
+        except Exception as exc:
+            # Retry on connection/timeout errors
+            last_exception = exc
+            if attempt < max_attempts - 1:
+                logger.debug(
+                    "ES request failed with %s (attempt %d/%d), retrying in %.1fs",
+                    type(exc).__name__,
+                    attempt + 1,
+                    max_attempts,
+                    delay,
+                )
+                import time
+                time.sleep(delay)
+                delay *= 2
+
+    # All retries exhausted
+    if last_exception:
+        raise last_exception
+    raise RuntimeError(f"Failed after {max_attempts} attempts")
 
 
 class _ElasticIndices:

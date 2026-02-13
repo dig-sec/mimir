@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
 from ..config import get_settings
 from ..connectors import sync_feedly_index
@@ -2148,3 +2148,153 @@ def backfill_status():
 
     checkpoints = CheckpointStore(es_client, settings.elastic_index_prefix)
     return get_backfill_status(checkpoints)
+
+
+# ── Ask (LLM-powered Q&A over the knowledge graph) ───────────
+
+
+@router.post("/api/ask")
+async def ask_question(request: Request):
+    """Ask a natural-language question about the knowledge graph.
+
+    Uses Ollama (phi4) to synthesize an answer from graph context.
+    Streams the response token-by-token via SSE.
+    """
+    import asyncio
+    import json as _json
+
+    import httpx
+
+    from ..llm.prompts import render_prompt
+
+    body = await request.json()
+    question = (body.get("question") or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="question is required")
+
+    # ── 1. Gather context from the knowledge graph ──────────────
+    context: Dict = {"entities": [], "relations": [], "provenance": [], "stats": None}
+
+    # Search for relevant entities
+    search_terms = question  # use the whole question as search
+    try:
+        found_entities = graph_store.search_entities(search_terms)[:20]
+    except Exception:
+        found_entities = []
+
+    entity_map: Dict[str, str] = {}  # id -> name
+    for e in found_entities:
+        entity_map[e.id] = e.name
+        context["entities"].append({
+            "name": e.name,
+            "type": getattr(e, "type", "unknown"),
+            "aliases": getattr(e, "aliases", []),
+        })
+
+    # Get subgraphs and provenance for top entities (limit to top 5)
+    seen_relations = set()
+    for e in found_entities[:5]:
+        try:
+            sub = graph_store.get_subgraph(e.id, depth=1, min_confidence=0.0)
+            for node in sub.nodes:
+                if node.id not in entity_map:
+                    entity_map[node.id] = node.name
+
+            for edge in sub.edges[:15]:
+                if edge.id in seen_relations:
+                    continue
+                seen_relations.add(edge.id)
+                context["relations"].append({
+                    "subject_name": entity_map.get(edge.subject_id, edge.subject_id),
+                    "predicate": edge.predicate,
+                    "object_name": entity_map.get(edge.object_id, edge.object_id),
+                    "confidence": edge.confidence,
+                })
+
+                # Get provenance for this relation
+                try:
+                    _rel, prov_list, _runs = graph_store.explain_edge(edge.id)
+                    for p in prov_list[:2]:
+                        context["provenance"].append({
+                            "source_uri": getattr(p, "source_uri", None),
+                            "snippet": getattr(p, "snippet", None),
+                        })
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    # Graph stats
+    try:
+        context["stats"] = {
+            "entities": graph_store.count_entities(),
+            "relations": graph_store.count_relations(),
+            "runs_completed": run_store.count_runs(status="completed"),
+        }
+    except Exception:
+        pass
+
+    # ── 2. Render prompt with gathered context ──────────────────
+    prompt = render_prompt(
+        "ask_knowledge_graph.jinja2",
+        question=question,
+        entities=context["entities"],
+        relations=context["relations"],
+        provenance=context["provenance"],
+        stats=context["stats"],
+    )
+
+    # ── 3. Stream response from Ollama ──────────────────────────
+    async def _stream_response():
+        # Send context summary first so the UI can show sources
+        sources_event = {
+            "type": "sources",
+            "entities_found": len(context["entities"]),
+            "relations_found": len(context["relations"]),
+            "provenance_found": len(context["provenance"]),
+            "entities": context["entities"][:10],
+        }
+        yield f"data: {_json.dumps(sources_event)}\n\n"
+
+        try:
+            async with httpx.AsyncClient(
+                base_url=settings.ollama_base_url,
+                timeout=httpx.Timeout(settings.ollama_timeout_seconds, connect=10.0),
+            ) as client:
+                async with client.stream(
+                    "POST",
+                    "/api/generate",
+                    json={
+                        "model": settings.ollama_model,
+                        "prompt": prompt,
+                        "stream": True,
+                    },
+                ) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line.strip():
+                            continue
+                        try:
+                            chunk = _json.loads(line)
+                            token = chunk.get("response", "")
+                            if token:
+                                yield f"data: {_json.dumps({'type': 'token', 'content': token})}\n\n"
+                            if chunk.get("done"):
+                                yield f"data: {_json.dumps({'type': 'done'})}\n\n"
+                        except _json.JSONDecodeError:
+                            continue
+        except httpx.ConnectError:
+            yield f"data: {_json.dumps({'type': 'error', 'message': 'Cannot connect to Ollama. Is it running?'})}\n\n"
+        except httpx.TimeoutException:
+            yield f"data: {_json.dumps({'type': 'error', 'message': 'Ollama request timed out.'})}\n\n"
+        except Exception as exc:
+            yield f"data: {_json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+
+    return StreamingResponse(
+        _stream_response(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

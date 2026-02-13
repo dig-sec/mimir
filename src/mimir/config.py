@@ -160,6 +160,26 @@ class Settings:
         "ELASTIC_WORKER_EXCLUDE_INDICES", "feedly_news"
     )
 
+    # Data ingestion limits
+    max_document_size_mb: int = int(os.getenv("MAX_DOCUMENT_SIZE_MB", "100"))
+    max_total_chars_per_run: int = int(
+        os.getenv("MAX_TOTAL_CHARS_PER_RUN", "1000000")
+    )
+
+    # Elasticsearch retry policy
+    es_retry_max_attempts: int = int(os.getenv("ES_RETRY_MAX_ATTEMPTS", "3"))
+    es_retry_initial_delay_seconds: float = float(
+        os.getenv("ES_RETRY_INITIAL_DELAY_SECONDS", "1.0")
+    )
+
+    # Timeouts
+    ollama_timeout_seconds: float = float(
+        os.getenv("OLLAMA_TIMEOUT_SECONDS", "300.0")
+    )
+    startup_health_check_timeout_seconds: float = float(
+        os.getenv("STARTUP_HEALTH_CHECK_TIMEOUT_SECONDS", "30.0")
+    )
+
     @property
     def elastic_worker_exclude_indices_list(self) -> List[str]:
         return [
@@ -245,3 +265,66 @@ class Settings:
 
 def get_settings() -> Settings:
     return Settings()
+
+
+def validate_settings(settings: Settings) -> None:
+    """Validate settings at startup and raise ValueError if issues found."""
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    # Validate Elasticsearch hosts
+    if not settings.elastic_hosts_list:
+        raise ValueError(
+            "ELASTICSEARCH_HOST not set or empty; at least one Elasticsearch host required"
+        )
+
+    # Validate worker concurrency
+    if settings.llm_worker_concurrency < 1:
+        raise ValueError(
+            f"LLM_WORKER_CONCURRENCY must be >= 1, got {settings.llm_worker_concurrency}"
+        )
+
+    # Validate timeouts
+    if settings.ollama_timeout_seconds <= 0:
+        raise ValueError(
+            f"OLLAMA_TIMEOUT_SECONDS must be > 0, got {settings.ollama_timeout_seconds}"
+        )
+    if settings.startup_health_check_timeout_seconds <= 0:
+        raise ValueError(
+            f"STARTUP_HEALTH_CHECK_TIMEOUT_SECONDS must be > 0, "
+            f"got {settings.startup_health_check_timeout_seconds}"
+        )
+
+    # Validate document size limits
+    if settings.max_document_size_mb <= 0:
+        raise ValueError(
+            f"MAX_DOCUMENT_SIZE_MB must be > 0, got {settings.max_document_size_mb}"
+        )
+    if settings.max_total_chars_per_run <= 0:
+        raise ValueError(
+            f"MAX_TOTAL_CHARS_PER_RUN must be > 0, got {settings.max_total_chars_per_run}"
+        )
+
+    # Validate retry policy
+    if settings.es_retry_max_attempts < 0:
+        raise ValueError(
+            f"ES_RETRY_MAX_ATTEMPTS must be >= 0, got {settings.es_retry_max_attempts}"
+        )
+    if settings.es_retry_initial_delay_seconds <= 0:
+        raise ValueError(
+            f"ES_RETRY_INITIAL_DELAY_SECONDS must be > 0, "
+            f"got {settings.es_retry_initial_delay_seconds}"
+        )
+
+    # Log resolved settings for debugging
+    logger.info("Settings validated successfully")
+    logger.debug(
+        "Resolved settings: ollama_model=%s, chunk_size=%d, "
+        "max_document_size_mb=%d, llm_concurrency=%d, es_hosts=%s",
+        settings.ollama_model,
+        settings.chunk_size,
+        settings.max_document_size_mb,
+        settings.llm_worker_concurrency,
+        ",".join(settings.elastic_hosts_list),
+    )

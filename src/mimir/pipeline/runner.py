@@ -191,6 +191,35 @@ async def process_run(
     metadata = doc.get("metadata") if isinstance(doc, dict) else None
     provenance_timestamp = _resolve_provenance_timestamp(metadata)
 
+    # Validate document size
+    doc_size_mb = len(text.encode("utf-8")) / (1024 * 1024)
+    if doc_size_mb > settings.max_document_size_mb:
+        logger.warning(
+            "Run %s: document too large (%.1fMB > %dMB limit), skipping",
+            run_id,
+            doc_size_mb,
+            settings.max_document_size_mb,
+        )
+        run_store.update_run_status(
+            run_id, "skipped", f"Document exceeds {settings.max_document_size_mb}MB limit"
+        )
+        return
+
+    # Validate total characters
+    if len(text) > settings.max_total_chars_per_run:
+        logger.warning(
+            "Run %s: document too long (%d > %d chars), skipping",
+            run_id,
+            len(text),
+            settings.max_total_chars_per_run,
+        )
+        run_store.update_run_status(
+            run_id,
+            "skipped",
+            f"Document exceeds {settings.max_total_chars_per_run} character limit",
+        )
+        return
+
     chunks = chunk_text(
         text,
         source_uri=source_uri,
