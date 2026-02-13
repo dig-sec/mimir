@@ -904,28 +904,35 @@ def _process_article(
         and run_store
         and len(full_text) > settings.elastic_connector_min_text_chars
     ):
-        run_id = str(uuid4())
-        run = ExtractionRun(
-            run_id=run_id,
-            started_at=datetime.now(timezone.utc),
-            model=settings.ollama_model,
-            prompt_version=settings.prompt_version,
-            params={
-                "chunk_size": settings.chunk_size,
-                "chunk_overlap": settings.chunk_overlap,
-            },
-            status="pending",
-            error=None,
-        )
-        run_store.create_run(
-            run,
-            source_uri,
-            full_text,
-            {
-                "source": "feedly",
-                "feed_name": feed_name,
-                "title": title[:200],
-                "url": canonical_url,
-            },
-        )
-        result.articles_queued_for_llm += 1
+        # Deterministic run ID so re-processing the same article in a
+        # later lookback window does NOT create a duplicate queue entry.
+        run_id = "feedly-" + hashlib.sha1(source_uri.encode("utf-8")).hexdigest()
+
+        if run_store.get_run(run_id):
+            # Already queued / processed — skip
+            pass
+        else:
+            run = ExtractionRun(
+                run_id=run_id,
+                started_at=datetime.now(timezone.utc),
+                model=settings.ollama_model,
+                prompt_version=settings.prompt_version,
+                params={
+                    "chunk_size": settings.chunk_size,
+                    "chunk_overlap": settings.chunk_overlap,
+                },
+                status="pending",
+                error=None,
+            )
+            run_store.create_run(
+                run,
+                source_uri,
+                full_text,
+                {
+                    "source": "feedly",
+                    "feed_name": feed_name,
+                    "title": title[:200],
+                    "url": canonical_url,
+                },
+            )
+            result.articles_queued_for_llm += 1

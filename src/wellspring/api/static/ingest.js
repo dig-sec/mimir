@@ -1,4 +1,4 @@
-import { toast, fmtSize } from './helpers.js';
+import { toast, fmtSize, apiFetch } from './helpers.js';
 
 export function initUpload() {
   const dropZone = document.getElementById('dropZone');
@@ -59,7 +59,7 @@ export function initUpload() {
     try {
       const fd = new FormData();
       pendingFiles.forEach(f => fd.append('files', f));
-      const res = await fetch('/api/upload', { method: 'POST', body: fd });
+      const res = await apiFetch('/api/upload', { method: 'POST', body: fd });
       if (!res.ok) throw new Error('Upload failed');
       const data = await res.json();
       // Summarise STIX vs regular uploads
@@ -112,7 +112,7 @@ export function initRuns() {
   document.getElementById('clearRunsBtn').addEventListener('click', async () => {
     if (!confirm('Delete all runs?')) return;
     try {
-      const res = await fetch('/api/runs', { method: 'DELETE' });
+      const res = await apiFetch('/api/runs', { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to clear runs');
       const data = await res.json();
       toast(`Cleared ${data.deleted} run(s)`, 'success');
@@ -125,7 +125,7 @@ export function initRuns() {
 
 async function loadRuns() {
   try {
-    const res = await fetch('/api/runs');
+    const res = await apiFetch('/api/runs');
     const runs = await res.json();
     const el = document.getElementById('runsContent');
     if (!runs.length) {
@@ -144,7 +144,7 @@ async function loadRuns() {
 function pollRun(runId) {
   const iv = setInterval(async () => {
     try {
-      const res = await fetch('/runs/' + runId);
+      const res = await apiFetch('/runs/' + runId);
       const data = await res.json();
       const status = data.run.status;
       if (status === 'completed' || status === 'failed') {

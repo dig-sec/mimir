@@ -1,4 +1,4 @@
-import { toast } from './helpers.js';
+import { toast, apiFetch } from './helpers.js';
 
 let graphData = null;
 let sim = null;
@@ -139,7 +139,7 @@ export function initGraph(getConfidence) {
     if (!ctxNode) return;
     hideCtxMenu();
     try {
-      const res = await fetch('/explain?entity_id=' + encodeURIComponent(ctxNode.id));
+      const res = await apiFetch('/explain?entity_id=' + encodeURIComponent(ctxNode.id));
       const data = await res.json();
       const n = data.relations?.length || 0;
       toast(`${ctxNode.name}: ${n} relation(s) with provenance`, 'success');
@@ -172,7 +172,7 @@ export function initGraph(getConfidence) {
 
     try {
       toast(`Exporting ${format.toUpperCase()} (${payload.nodes.length} nodes)…`, 'success');
-      const res = await fetch(`/api/export/${format}`, {
+      const res = await apiFetch(`/api/export/${format}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -213,6 +213,7 @@ export function initGraph(getConfidence) {
 /* ── public: load query and render ─────── */
 export async function loadGraph(params, depthArg, minConfArg) {
   const seedName = typeof params === 'string' ? params : params.seed;
+  const seedId = typeof params === 'string' ? null : (params.seedId || null);
   const depth = typeof params === 'string' ? depthArg : params.depth;
   const minConf = typeof params === 'string' ? minConfArg : params.minConfidence;
   const since = typeof params === 'string' ? readDateInput('sinceInput') : (params.since || null);
@@ -226,6 +227,7 @@ export async function loadGraph(params, depthArg, minConfArg) {
 
   lastGraphQuery = {
     seedName,
+    seedId,
     depth,
     minConf,
     since,
@@ -239,13 +241,17 @@ export async function loadGraph(params, depthArg, minConfArg) {
   btn.textContent = 'Loading...';
   try {
     const payload = {
-      seed_name: seedName,
       depth,
       min_confidence: minConf,
       since,
       until,
     };
-    const res = await fetch('/query', {
+    if (seedId) {
+      payload.seed_id = seedId;
+    } else {
+      payload.seed_name = seedName;
+    }
+    const res = await apiFetch('/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -259,6 +265,7 @@ export async function loadGraph(params, depthArg, minConfArg) {
     if (showTimeline) {
       try {
         await loadTimeline(seedName, {
+          seedId,
           depth,
           minConf,
           since,
@@ -281,17 +288,21 @@ export async function loadGraph(params, depthArg, minConfArg) {
   }
 }
 
-async function loadTimeline(seedName, { depth, minConf, since, until, interval }) {
+async function loadTimeline(seedName, { seedId, depth, minConf, since, until, interval }) {
   const query = new URLSearchParams({
-    entity_name: seedName,
     depth: String(depth),
     min_confidence: String(minConf),
     interval,
   });
+  if (seedId) {
+    query.set('entity_id', seedId);
+  } else {
+    query.set('entity_name', seedName);
+  }
   if (since) query.set('since', since);
   if (until) query.set('until', until);
 
-  const res = await fetch('/api/timeline/entity?' + query.toString());
+  const res = await apiFetch('/api/timeline/entity?' + query.toString());
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail || 'Timeline query failed');
@@ -573,6 +584,11 @@ function renderGraph(data) {
     .style('cursor', 'pointer')
     .on('click', (event, d) => {
       if (selectMode) { event.stopPropagation(); toggleSelectEdge(d.id); }
+    })
+    .on('dblclick', (event, d) => {
+      if (selectMode) return;
+      event.stopPropagation();
+      explainRelation(d.id, d.predicate);
     });
 
   const edgeLabel = g.selectAll('.edge-label')
@@ -691,6 +707,23 @@ function removeNode(nodeId) {
   toast('Node removed', 'success');
 }
 
+async function explainRelation(relationId, fallbackPredicate) {
+  try {
+    const res = await apiFetch('/explain?relation_id=' + encodeURIComponent(relationId));
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Relation explain failed');
+    }
+    const data = await res.json();
+    const predicate = data.relation?.predicate || fallbackPredicate || 'relation';
+    const provenanceCount = Array.isArray(data.provenance) ? data.provenance.length : 0;
+    const runCount = Array.isArray(data.runs) ? data.runs.length : 0;
+    toast(`${predicate}: ${provenanceCount} provenance item(s), ${runCount} run(s)`, 'success');
+  } catch (e) {
+    toast(e.message || 'Could not load relation provenance', 'error');
+  }
+}
+
 async function expandNode(d) {
   try {
     const temporal = currentTemporalFilters();
@@ -699,7 +732,7 @@ async function expandNode(d) {
       lastGraphQuery.until = temporal.until;
       lastGraphQuery.interval = currentTimelineInterval();
     }
-    const res = await fetch('/query', {
+    const res = await apiFetch('/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -721,6 +754,7 @@ async function expandNode(d) {
     if (timelineEnabled() && lastGraphQuery) {
       try {
         await loadTimeline(lastGraphQuery.seedName, {
+          seedId: lastGraphQuery.seedId,
           depth: lastGraphQuery.depth,
           minConf: lastGraphQuery.minConf,
           since: lastGraphQuery.since,

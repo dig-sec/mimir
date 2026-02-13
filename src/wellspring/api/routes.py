@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, Response
 
 from ..config import get_settings
@@ -122,14 +122,22 @@ def _get_elastic_connector_client(
 
 
 @router.get("/", response_class=HTMLResponse)
-def root() -> str:
-    return render_root_ui()
+def root(request: Request) -> str:
+    root_path = str(request.scope.get("root_path") or "")
+    return render_root_ui(
+        root_path=root_path,
+        api_base_url=settings.wellspring_api_base_url,
+    )
 
 
 @router.get("/api/search")
-def search_entities(q: str = Query(..., min_length=1)):
+def search_entities(
+    q: str = Query(..., min_length=1),
+    entity_type: Optional[str] = Query(default=None),
+):
     """Search for entities by name."""
-    matches = graph_store.search_entities(q)
+    normalized_type = (entity_type or "").strip() or None
+    matches = graph_store.search_entities(q, entity_type=normalized_type)
     return [{"id": e.id, "name": e.name, "type": e.type} for e in matches[:50]]
 
 

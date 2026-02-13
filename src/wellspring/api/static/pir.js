@@ -1,4 +1,4 @@
-import { toast } from './helpers.js';
+import { toast, apiFetch } from './helpers.js';
 
 /* ── type icons (inline SVG fragments) ───────── */
 const TYPE_ICONS = {
@@ -58,7 +58,7 @@ export function initPIR() {
 
     try {
       const query = new URLSearchParams({ days: String(days), top_n: String(topN) });
-      const res = await fetch('/api/pir/trending?' + query.toString());
+      const res = await apiFetch('/api/pir/trending?' + query.toString());
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail || 'PIR request failed');
@@ -138,7 +138,7 @@ export function initPIR() {
     itemEl.insertAdjacentElement('afterend', drawer);
 
     try {
-      const res = await fetch(`/api/pir/entity-context?entity_id=${encodeURIComponent(entityId)}`);
+      const res = await apiFetch(`/api/pir/entity-context?entity_id=${encodeURIComponent(entityId)}`);
       if (!res.ok) throw new Error('Failed to load context');
       const data = await res.json();
       renderDetail(drawer, data, entityName);
@@ -177,7 +177,7 @@ export function initPIR() {
     let neighborsHtml = '';
     for (const [pred, items] of Object.entries(byPred)) {
       const pills = items.map(n =>
-        `<span class="pir-detail-entity t-${escapeAttr(n.type)}" data-entity-id="${escapeAttr(n.id)}" data-entity-name="${escapeAttr(n.name)}">
+        `<span class="pir-detail-entity t-${escapeAttr(n.type)}" data-entity-id="${escapeHtml(n.id)}" data-entity-name="${escapeHtml(n.name)}">
           <span class="entity-dot t-${escapeAttr(n.type)}"></span>${escapeHtml(n.name)}
         </span>`
       ).join('');
@@ -217,12 +217,13 @@ export function initPIR() {
     /* Wire up the visualize button */
     drawer.querySelector('.pir-detail-viz')?.addEventListener('click', (e) => {
       e.stopPropagation();
-      const searchInput = document.getElementById('searchInput');
-      const vizBtn      = document.getElementById('vizBtn');
+      const searchInput   = document.getElementById('searchInput');
+      const entityIdInput = document.getElementById('entityIdInput');
+      const vizBtn        = document.getElementById('vizBtn');
       if (searchInput) {
         document.querySelector('.tab-btn[data-tab="explore"]')?.click();
         searchInput.value = entityName;
-        searchInput.dispatchEvent(new Event('input'));
+        if (entityIdInput) entityIdInput.value = data.entity?.id || '';
         if (vizBtn) setTimeout(() => vizBtn.click(), 350);
       }
     });
@@ -231,12 +232,13 @@ export function initPIR() {
     drawer.querySelectorAll('.pir-detail-entity').forEach(el => {
       el.addEventListener('click', (e) => {
         e.stopPropagation();
-        const searchInput = document.getElementById('searchInput');
-        const vizBtn      = document.getElementById('vizBtn');
+        const searchInput   = document.getElementById('searchInput');
+        const entityIdInput = document.getElementById('entityIdInput');
+        const vizBtn        = document.getElementById('vizBtn');
         if (searchInput) {
           document.querySelector('.tab-btn[data-tab="explore"]')?.click();
           searchInput.value = el.dataset.entityName || '';
-          searchInput.dispatchEvent(new Event('input'));
+          if (entityIdInput) entityIdInput.value = el.dataset.entityId || '';
           if (vizBtn) setTimeout(() => vizBtn.click(), 350);
         }
       });
@@ -294,7 +296,7 @@ export function initPIR() {
     const barColor = `var(--c-${type}, #94a3b8)`;
 
     return `
-      <article class="pir-item" data-entity-id="${escapeAttr(entityId)}" data-entity-name="${escapeAttr(name)}">
+      <article class="pir-item" data-entity-id="${escapeHtml(entityId)}" data-entity-name="${escapeHtml(name)}">
         <span class="pir-item-rank">${index + 1}</span>
         <div class="pir-item-body">
           <div class="pir-item-title">

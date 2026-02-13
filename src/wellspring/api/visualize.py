@@ -98,7 +98,7 @@ def render_html(subgraph: Subgraph, title: Optional[str] = None) -> str:
   </header>
   <svg id="graph"></svg>
 
-  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script src="static/vendor/d3.v7.min.js"></script>
   <script>
     const data = {data_json};
     const width = window.innerWidth;

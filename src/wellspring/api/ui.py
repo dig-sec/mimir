@@ -1,15 +1,31 @@
 from __future__ import annotations
 
+import json
 
-def render_root_ui() -> str:
+
+def _normalize_root_path(root_path: str) -> str:
+    value = str(root_path or "").strip()
+    if not value or value == "/":
+        return ""
+    if not value.startswith("/"):
+        value = "/" + value
+    return value.rstrip("/")
+
+
+def render_root_ui(root_path: str = "", api_base_url: str = "") -> str:
     """Render the shell HTML — all logic lives in static JS/CSS files."""
-    return """<!doctype html>
+    root_prefix = _normalize_root_path(root_path)
+    static_prefix = f"{root_prefix}/static" if root_prefix else "/static"
+    docs_href = f"{root_prefix}/docs" if root_prefix else "/docs"
+    root_path_json = json.dumps(root_prefix)
+    api_base_json = json.dumps(str(api_base_url or "").strip())
+    return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Wellspring</title>
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="{static_prefix}/style.css" />
 </head>
 <body>
 
@@ -22,7 +38,7 @@ def render_root_ui() -> str:
     </div>
     <div class="spacer"></div>
     <span id="statsBar" style="font-size:12px;color:#6b7280;font-family:monospace"></span>
-    <a href="/docs" target="_blank" class="btn btn-outline btn-sm">API Docs</a>
+    <a href="{docs_href}" target="_blank" class="btn btn-outline btn-sm">API Docs</a>
   </header>
 
   <!-- ─── INGESTION PROGRESS ──────────────── -->
@@ -48,6 +64,29 @@ def render_root_ui() -> str:
               <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
             </svg>
             <input type="text" id="searchInput" placeholder="Search entities..." autocomplete="off" />
+          </div>
+          <div class="controls">
+            <div class="ctrl-group">
+              <label>Entity type</label>
+              <select id="entityTypeInput">
+                <option value="">All types</option>
+                <option value="threat_actor">Threat Actor</option>
+                <option value="malware">Malware</option>
+                <option value="vulnerability">Vulnerability</option>
+                <option value="attack_pattern">Attack Pattern</option>
+                <option value="campaign">Campaign</option>
+                <option value="tool">Tool</option>
+                <option value="indicator">Indicator</option>
+                <option value="infrastructure">Infrastructure</option>
+                <option value="identity">Identity</option>
+                <option value="mitigation">Mitigation</option>
+                <option value="report">Report</option>
+              </select>
+            </div>
+            <div class="ctrl-group">
+              <label>Entity ID (optional)</label>
+              <input type="text" id="entityIdInput" placeholder="Exact entity ID" />
+            </div>
           </div>
           <div class="controls">
             <div class="ctrl-group">
@@ -264,7 +303,11 @@ def render_root_ui() -> str:
 
   <div class="toasts" id="toasts"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-  <script type="module" src="/static/main.js"></script>
+  <script>
+    window.__WELLSPRING_ROOT_PATH__ = {root_path_json};
+    window.__WELLSPRING_API_BASE__ = {api_base_json};
+  </script>
+  <script src="{static_prefix}/vendor/d3.v7.min.js"></script>
+  <script type="module" src="{static_prefix}/main.js"></script>
 </body>
 </html>"""

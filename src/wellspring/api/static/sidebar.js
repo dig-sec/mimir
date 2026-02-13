@@ -1,4 +1,4 @@
-import { toast } from './helpers.js';
+import { toast, apiFetch } from './helpers.js';
 
 /* ── tab switching ─────────────────────── */
 export function initTabs() {
@@ -34,6 +34,8 @@ export function initTabs() {
 export function initSearch(onVisualize) {
   const searchInput = document.getElementById('searchInput');
   const entityList = document.getElementById('entityList');
+  const entityTypeInput = document.getElementById('entityTypeInput');
+  const entityIdInput = document.getElementById('entityIdInput');
   const confInput = document.getElementById('confInput');
   const confVal = document.getElementById('confVal');
   const sinceInput = document.getElementById('sinceInput');
@@ -48,6 +50,8 @@ export function initSearch(onVisualize) {
   });
 
   searchInput.addEventListener('input', () => {
+    selectedEntity = null;
+    if (entityIdInput) entityIdInput.value = '';
     clearTimeout(searchTimer);
     const q = searchInput.value.trim();
     if (!q) {
@@ -61,11 +65,26 @@ export function initSearch(onVisualize) {
     if (e.key === 'Enter') fireVisualize();
   });
 
+  entityTypeInput?.addEventListener('change', () => {
+    const q = searchInput.value.trim();
+    if (!q) return;
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => doSearch(q), 100);
+  });
+
+  entityIdInput?.addEventListener('input', () => {
+    const typedId = entityIdInput.value.trim();
+    if (typedId) selectedEntity = null;
+  });
+
   document.getElementById('vizBtn').addEventListener('click', fireVisualize);
 
   async function doSearch(q) {
     try {
-      const res = await fetch('/api/search?q=' + encodeURIComponent(q));
+      const query = new URLSearchParams({ q });
+      const entityType = entityTypeInput?.value || '';
+      if (entityType) query.set('entity_type', entityType);
+      const res = await apiFetch('/api/search?' + query.toString());
       const data = await res.json();
       if (!data.length) {
         entityList.innerHTML = '<div class="empty-state" style="padding:20px 0"><p>No entities found</p></div>';
@@ -77,6 +96,7 @@ export function initSearch(onVisualize) {
           <div class="entity-info">
             <div class="entity-name">${e.name}</div>
             <div class="entity-type">${e.type || ''}</div>
+            <div class="entity-id">${e.id}</div>
           </div>
         </div>
       `).join('');
@@ -94,13 +114,17 @@ export function initSearch(onVisualize) {
     card.classList.add('selected');
     selectedEntity = { id: card.dataset.id, name: card.dataset.name };
     searchInput.value = card.dataset.name;
+    if (entityIdInput) entityIdInput.value = card.dataset.id || '';
   }
 
   function fireVisualize() {
-    const seed = selectedEntity?.name || searchInput.value.trim();
-    if (!seed) return;
+    const typedEntityId = entityIdInput?.value.trim() || '';
+    const seedId = typedEntityId || selectedEntity?.id || null;
+    const seed = selectedEntity?.name || searchInput.value.trim() || typedEntityId;
+    if (!seed && !seedId) return;
     onVisualize({
       seed,
+      seedId,
       depth: parseInt(document.getElementById('depthInput').value, 10),
       minConfidence: parseFloat(confInput.value),
       since: _toIsoDateTime(sinceInput?.value || ''),

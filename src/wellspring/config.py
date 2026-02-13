@@ -25,6 +25,7 @@ class Settings:
     elastic_index_prefix: str = os.getenv("ELASTICSEARCH_INDEX_PREFIX", "wellspring")
     elastic_verify_certs: bool = _env_bool("ELASTICSEARCH_VERIFY_CERTS", "1")
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
+    wellspring_api_base_url: str = os.getenv("WELLSPRING_API_BASE_URL", "")
     enable_cooccurrence: bool = os.getenv("ENABLE_COOCCURRENCE", "0") == "1"
     cooccurrence_max_entities: int = int(os.getenv("CO_OCCURRENCE_MAX_ENTITIES", "25"))
     enable_inference: bool = os.getenv("ENABLE_INFERENCE", "0") == "1"
@@ -118,6 +119,38 @@ class Settings:
     watched_folders: str = os.getenv("WATCHED_FOLDERS", "/data/documents")
     sync_interval_minutes: int = int(os.getenv("SYNC_INTERVAL_MINUTES", "30"))
     sync_lookback_minutes: int = int(os.getenv("SYNC_LOOKBACK_MINUTES", "60"))
+
+    # ── Worker-specific settings ─────────────────────────────
+    # LLM extraction worker
+    llm_worker_concurrency: int = int(os.getenv("LLM_WORKER_CONCURRENCY", "3"))
+    llm_worker_poll_seconds: int = int(os.getenv("LLM_WORKER_POLL_SECONDS", "2"))
+
+    # Feedly connector worker
+    feedly_worker_interval_minutes: int = int(
+        os.getenv("FEEDLY_WORKER_INTERVAL_MINUTES", os.getenv("SYNC_INTERVAL_MINUTES", "30"))
+    )
+    feedly_queue_for_llm: bool = _env_bool("FEEDLY_QUEUE_FOR_LLM", "0")
+
+    # OpenCTI connector worker
+    opencti_worker_interval_minutes: int = int(
+        os.getenv("OPENCTI_WORKER_INTERVAL_MINUTES", os.getenv("SYNC_INTERVAL_MINUTES", "30"))
+    )
+
+    # Elasticsearch source worker
+    elastic_worker_interval_minutes: int = int(
+        os.getenv("ELASTIC_WORKER_INTERVAL_MINUTES", os.getenv("SYNC_INTERVAL_MINUTES", "30"))
+    )
+    elastic_worker_exclude_indices: str = os.getenv(
+        "ELASTIC_WORKER_EXCLUDE_INDICES", "feedly_news"
+    )
+
+    @property
+    def elastic_worker_exclude_indices_list(self) -> List[str]:
+        return [
+            idx.strip()
+            for idx in self.elastic_worker_exclude_indices.split(",")
+            if idx.strip()
+        ]
 
     @property
     def elastic_hosts_list(self) -> List[str]:

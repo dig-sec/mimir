@@ -10,13 +10,58 @@ services:
       - /mnt/nvme0n1p1/wellspring:/data
       - /mnt/storage2:/data/documents:ro
 
-  worker:
+  # ── LLM extraction worker ──────────────────────────────────
+  # Consumes the run queue and processes chunks through the LLM.
+  # Scale horizontally: docker compose up --scale llm-worker=3
+  llm-worker:
     build: .
     restart: unless-stopped
-    command: ["python", "-m", "wellspring.worker.main"]
+    command: ["python", "-m", "wellspring.worker.llm_worker"]
     env_file: .env
     environment:
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - LLM_WORKER_CONCURRENCY=3
+    volumes:
+      - /mnt/nvme0n1p1/wellspring:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ── Feedly connector worker ────────────────────────────────
+  feedly-worker:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "wellspring.worker.feedly_worker"]
+    env_file: .env
+    environment:
+      - FEEDLY_WORKER_INTERVAL_MINUTES=30
+      - FEEDLY_QUEUE_FOR_LLM=1
+    volumes:
+      - /mnt/nvme0n1p1/wellspring:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ── OpenCTI connector worker ───────────────────────────────
+  opencti-worker:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "wellspring.worker.opencti_worker"]
+    env_file: .env
+    environment:
+      - OPENCTI_WORKER_INTERVAL_MINUTES=30
+    volumes:
+      - /mnt/nvme0n1p1/wellspring:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ── Elasticsearch source worker ────────────────────────────
+  elastic-worker:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "wellspring.worker.elastic_worker"]
+    env_file: .env
+    environment:
+      - ELASTIC_WORKER_INTERVAL_MINUTES=30
+      - ELASTIC_WORKER_EXCLUDE_INDICES=feedly_news
     volumes:
       - /mnt/nvme0n1p1/wellspring:/data
     extra_hosts:

@@ -1,4 +1,4 @@
-import { toast } from './helpers.js';
+import { toast, apiFetch } from './helpers.js';
 
 export function initOpenCTI() {
   document.getElementById('scanFilesBtn').addEventListener('click', scanFiles);
@@ -22,7 +22,7 @@ let watchedFolderLabel = 'Watched Folders';
 
 async function loadWatchedFolders() {
   try {
-    const res = await fetch('/api/watched-folders');
+    const res = await apiFetch('/api/watched-folders');
     const folders = await res.json();
     if (folders.length > 0) {
       const names = folders.map(f => f.path.split('/').pop()).join(', ');
@@ -36,7 +36,7 @@ async function loadWatchedFolders() {
 
 async function refreshStats() {
   try {
-    const res = await fetch('/api/stats');
+    const res = await apiFetch('/api/stats');
     const s = await res.json();
 
     // Header stats bar (compact)
@@ -97,7 +97,7 @@ async function scanFiles() {
 
   try {
     // Scan all watched folders
-    const res = await fetch('/api/scan', { method: 'POST' });
+    const res = await apiFetch('/api/scan', { method: 'POST' });
 
     if (!res.ok) {
       const err = await res.json();
@@ -122,7 +122,7 @@ async function pullElasticsearchDocs() {
   btn.textContent = 'Pulling...';
 
   try {
-    const res = await fetch('/api/elasticsearch/pull', { method: 'POST' });
+    const res = await apiFetch('/api/elasticsearch/pull', { method: 'POST' });
 
     if (!res.ok) {
       const err = await res.json();
@@ -147,7 +147,7 @@ async function pullFeedly() {
   btn.textContent = 'Pulling...';
 
   try {
-    const res = await fetch('/api/feedly/pull', { method: 'POST' });
+    const res = await apiFetch('/api/feedly/pull', { method: 'POST' });
 
     if (!res.ok) {
       const err = await res.json();
@@ -172,7 +172,7 @@ async function pullOpenCTI() {
   btn.textContent = 'Pulling...';
 
   try {
-    const res = await fetch('/api/opencti/pull', { method: 'POST' });
+    const res = await apiFetch('/api/opencti/pull', { method: 'POST' });
 
     if (!res.ok) {
       const err = await res.json();
@@ -197,7 +197,7 @@ async function pullAllSources() {
   btn.textContent = 'Pulling all sources...';
 
   try {
-    const res = await fetch('/api/sources/pull-all', { method: 'POST' });
+    const res = await apiFetch('/api/sources/pull-all', { method: 'POST' });
 
     if (!res.ok) {
       const err = await res.json();
@@ -224,7 +224,7 @@ function pollTask(taskId) {
 
   const iv = setInterval(async () => {
     try {
-      const res = await fetch('/api/tasks/' + taskId);
+      const res = await apiFetch('/api/tasks/' + taskId);
       const t = await res.json();
 
       badge.textContent = t.status;
@@ -249,7 +249,7 @@ function pollTask(taskId) {
 
 async function checkTasks() {
   try {
-    const res = await fetch('/api/tasks');
+    const res = await apiFetch('/api/tasks');
     const tasks = await res.json();
     const running = tasks.find(t => t.status === 'running');
     if (running) pollTask(running.id);

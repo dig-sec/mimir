@@ -1,0 +1,2 @@
+[console_scripts]
+wellspring-mcp = wellspring.mcp.server:main
