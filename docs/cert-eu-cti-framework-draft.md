@@ -5,14 +5,14 @@ Source: https://www.cert.europa.eu/publications/threat-intelligence/cyber-threat
 
 ## Goal
 
-Integrate CERT-EU's CTI framework concepts into Wellspring so the platform can:
+Integrate CERT-EU's CTI framework concepts into Mimir so the platform can:
 
 1. Precompute daily CTI assessments (fast UI reads).
 2. Track threat posture trends over time.
 3. Represent uncertainty explicitly (confidence + attribution state).
 4. Prioritize mitigations from observed activity.
 
-## Current Baseline in Wellspring
+## Current Baseline in Mimir
 
 What already exists:
 
@@ -249,17 +249,17 @@ Add in `config.py`:
 
 Backend:
 
-- `src/wellspring/storage/metrics_store.py`
-- `src/wellspring/storage/elastic_store.py`
-- `src/wellspring/api/routes.py`
-- `src/wellspring/worker/llm_worker.py`
+- `src/mimir/storage/metrics_store.py`
+- `src/mimir/storage/elastic_store.py`
+- `src/mimir/api/routes.py`
+- `src/mimir/worker/llm_worker.py`
 
 Frontend:
 
-- `src/wellspring/api/static/main.js`
-- `src/wellspring/api/static/style.css`
-- `src/wellspring/api/static/cti.js` (new)
-- `src/wellspring/api/ui.py`
+- `src/mimir/api/static/main.js`
+- `src/mimir/api/static/style.css`
+- `src/mimir/api/static/cti.js` (new)
+- `src/mimir/api/ui.py`
 
 ## Phased Delivery
 

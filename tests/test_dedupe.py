@@ -1,5 +1,5 @@
 from tests.in_memory_graph_store import InMemoryGraphStore
-from wellspring.dedupe import EntityResolver
+from mimir.dedupe import EntityResolver
 
 
 def test_entity_dedupe_by_key():

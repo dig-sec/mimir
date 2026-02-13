@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
-from wellspring.normalize import canonical_entity_key
-from wellspring.schemas import (
+from mimir.normalize import canonical_entity_key
+from mimir.schemas import (
     Entity,
     ExtractionRun,
     Provenance,
@@ -15,7 +15,7 @@ from wellspring.schemas import (
     SubgraphEdge,
     SubgraphNode,
 )
-from wellspring.storage.base import GraphStore
+from mimir.storage.base import GraphStore
 
 
 def _merge_attrs(existing: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, Any]:

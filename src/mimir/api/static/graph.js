@@ -334,7 +334,7 @@ export function initGraph(getConfidence) {
 
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `wellspring-${format}-${new Date().toISOString().slice(0,10)}.${ext}`;
+      a.download = `mimir-${format}-${new Date().toISOString().slice(0,10)}.${ext}`;
       a.click();
       URL.revokeObjectURL(a.href);
       toast(`${format.toUpperCase()} export downloaded`, 'success');
@@ -405,9 +405,9 @@ export async function loadGraph(params, depthArg, minConfArg) {
       throw new Error(e.detail || 'Query failed');
     }
     const data = await res.json();
-    const truncated = res.headers.get('x-wellspring-graph-truncated') === '1';
-    const originalNodes = readIntHeader(res.headers, 'x-wellspring-original-nodes', data.nodes.length);
-    const originalEdges = readIntHeader(res.headers, 'x-wellspring-original-edges', data.edges.length);
+    const truncated = res.headers.get('x-mimir-graph-truncated') === '1';
+    const originalNodes = readIntHeader(res.headers, 'x-mimir-original-nodes', data.nodes.length);
+    const originalEdges = readIntHeader(res.headers, 'x-mimir-original-edges', data.edges.length);
     renderGraph(data);
     if (showTimeline) {
       try {

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from wellspring.pipeline.runner import _resolve_provenance_timestamp
+from mimir.pipeline.runner import _resolve_provenance_timestamp
 
 
 def test_resolve_provenance_timestamp_prefers_metadata_timestamp_value():

@@ -1,2 +1,2 @@
 [console_scripts]
-wellspring-mcp = wellspring.mcp.server:main
+mimir-mcp = mimir.mcp.server:main

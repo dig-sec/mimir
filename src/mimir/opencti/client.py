@@ -1,4 +1,4 @@
-"""OpenCTI GraphQL client for Wellspring integration.
+"""OpenCTI GraphQL client for Mimir integration.
 
 All methods are synchronous — designed to run in a background thread
 so they never block the FastAPI event loop.
@@ -59,7 +59,7 @@ class OpenCTIClient:
             headers={
                 "Authorization": f"Bearer {api_token}",
                 "Content-Type": "application/json",
-                "User-Agent": "Wellspring/1.0",
+                "User-Agent": "Mimir/1.0",
                 "Accept": "application/json",
             },
             timeout=timeout,

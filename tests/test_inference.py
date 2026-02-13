@@ -1,5 +1,5 @@
-from wellspring.pipeline.runner import _infer_is_a_relations
-from wellspring.schemas import Relation
+from mimir.pipeline.runner import _infer_is_a_relations
+from mimir.schemas import Relation
 
 
 def test_infer_is_a_transitive():

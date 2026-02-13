@@ -7,7 +7,7 @@ services:
     environment:
       - OLLAMA_BASE_URL=http://127.0.0.1:11434
     volumes:
-      - /mnt/nvme0n1p1/wellspring:/data
+      - /mnt/nvme0n1p1/mimir:/data
       - /mnt/storage2:/data/documents:ro
 
   # ── LLM extraction worker ──────────────────────────────────
@@ -16,13 +16,13 @@ services:
   llm-worker:
     build: .
     restart: on-failure
-    command: ["python", "-m", "wellspring.worker.llm_worker"]
+    command: ["python", "-m", "mimir.worker.llm_worker"]
     env_file: .env
     environment:
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - LLM_WORKER_CONCURRENCY=3
     volumes:
-      - /mnt/nvme0n1p1/wellspring:/data
+      - /mnt/nvme0n1p1/mimir:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -30,13 +30,13 @@ services:
   feedly-worker:
     build: .
     restart: on-failure
-    command: ["python", "-m", "wellspring.worker.feedly_worker"]
+    command: ["python", "-m", "mimir.worker.feedly_worker"]
     env_file: .env
     environment:
       - FEEDLY_WORKER_INTERVAL_MINUTES=30
       - FEEDLY_QUEUE_FOR_LLM=1
     volumes:
-      - /mnt/nvme0n1p1/wellspring:/data
+      - /mnt/nvme0n1p1/mimir:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -44,12 +44,12 @@ services:
   opencti-worker:
     build: .
     restart: on-failure
-    command: ["python", "-m", "wellspring.worker.opencti_worker"]
+    command: ["python", "-m", "mimir.worker.opencti_worker"]
     env_file: .env
     environment:
       - OPENCTI_WORKER_INTERVAL_MINUTES=30
     volumes:
-      - /mnt/nvme0n1p1/wellspring:/data
+      - /mnt/nvme0n1p1/mimir:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -57,22 +57,22 @@ services:
   elastic-worker:
     build: .
     restart: on-failure
-    command: ["python", "-m", "wellspring.worker.elastic_worker"]
+    command: ["python", "-m", "mimir.worker.elastic_worker"]
     env_file: .env
     environment:
       - ELASTIC_WORKER_INTERVAL_MINUTES=30
       - ELASTIC_WORKER_EXCLUDE_INDICES=feedly_news
     volumes:
-      - /mnt/nvme0n1p1/wellspring:/data
+      - /mnt/nvme0n1p1/mimir:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
   backfill:
     build: .
     profiles: ["backfill"]
-    command: ["python", "-m", "wellspring.backfill"]
+    command: ["python", "-m", "mimir.backfill"]
     env_file: .env
     volumes:
-      - /mnt/nvme0n1p1/wellspring:/data
+      - /mnt/nvme0n1p1/mimir:/data
     extra_hosts:
       - "host.docker.internal:host-gateway"

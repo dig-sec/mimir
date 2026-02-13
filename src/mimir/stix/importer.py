@@ -1,6 +1,6 @@
-"""STIX 2.1 → Wellspring knowledge-graph importer.
+"""STIX 2.1 → Mimir knowledge-graph importer.
 
-Parses a STIX bundle and converts SDOs + SROs into Wellspring entities
+Parses a STIX bundle and converts SDOs + SROs into Mimir entities
 and relations, bypassing LLM extraction entirely for structured data.
 """
 
@@ -19,7 +19,7 @@ from ..storage.base import GraphStore
 
 logger = logging.getLogger(__name__)
 
-# ── STIX SDO type → Wellspring entity type mapping ──────────────────────────
+# ── STIX SDO type → Mimir entity type mapping ──────────────────────────
 _SDO_TYPE_MAP: Dict[str, str] = {
     "threat-actor": "threat_actor",
     "intrusion-set": "threat_actor",
@@ -41,7 +41,7 @@ _SDO_TYPE_MAP: Dict[str, str] = {
     "opinion": "opinion",
 }
 
-# ── STIX SRO relationship_type → Wellspring predicate ───────────────────────
+# ── STIX SRO relationship_type → Mimir predicate ───────────────────────
 _RELATIONSHIP_MAP: Dict[str, str] = {
     "uses": "uses",
     "targets": "targets",
@@ -126,14 +126,14 @@ def ingest_stix_bundle(
     graph_store: GraphStore,
     source_uri: str = "stix://bundle",
 ) -> StixImportResult:
-    """Ingest a STIX 2.1 bundle directly into the Wellspring graph store.
+    """Ingest a STIX 2.1 bundle directly into the Mimir graph store.
 
     Parameters
     ----------
     bundle_data:
         Parsed JSON dict of the STIX bundle (must have ``type`` = ``bundle``).
     graph_store:
-        Wellspring graph store to write entities/relations into.
+        Mimir graph store to write entities/relations into.
     source_uri:
         Provenance URI recorded for imported objects.
 
@@ -154,7 +154,7 @@ def ingest_stix_bundle(
 
     resolver = EntityResolver(graph_store)
 
-    # --- Phase 1: map STIX IDs → Wellspring entities ---
+    # --- Phase 1: map STIX IDs → Mimir entities ---
     stix_id_map: Dict[str, Entity] = {}  # stix_id → Entity
 
     for obj in objects:

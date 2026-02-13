@@ -1,4 +1,4 @@
-"""Historical backfill worker for Wellspring.
+"""Historical backfill worker for Mimir.
 
 Ingests ALL data from Feedly and OpenCTI from the very beginning,
 using checkpoint-based resumption so restarts don't lose progress.
@@ -8,10 +8,10 @@ Checkpoints are stored in Elasticsearch under the index
 
 Usage (CLI)::
 
-    python -m wellspring.backfill              # backfill everything
-    python -m wellspring.backfill --source feedly
-    python -m wellspring.backfill --source opencti
-    python -m wellspring.backfill --reset      # wipe checkpoints, start over
+    python -m mimir.backfill              # backfill everything
+    python -m mimir.backfill --source feedly
+    python -m mimir.backfill --source opencti
+    python -m mimir.backfill --reset      # wipe checkpoints, start over
 
 Usage (API)::
 
@@ -50,7 +50,7 @@ _BATCH_WINDOW_HOURS = 24  # 1-day windows
 class CheckpointStore:
     """Tiny k/v store backed by a single ES index for resumable backfill."""
 
-    def __init__(self, client: Any, index_prefix: str = "wellspring") -> None:
+    def __init__(self, client: Any, index_prefix: str = "mimir") -> None:
         self._client = client
         self._index = f"{index_prefix}-backfill-checkpoints"
         self._ensure_index()
@@ -431,7 +431,7 @@ def get_backfill_status(checkpoints: CheckpointStore) -> Dict[str, Any]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Wellspring historical backfill")
+    parser = argparse.ArgumentParser(description="Mimir historical backfill")
     parser.add_argument(
         "--source",
         "-s",

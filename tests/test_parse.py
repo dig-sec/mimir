@@ -1,4 +1,4 @@
-from wellspring.llm.parse import extract_triples, parse_json_safe
+from mimir.llm.parse import extract_triples, parse_json_safe
 
 
 def test_parse_json_safe_with_code_fence():

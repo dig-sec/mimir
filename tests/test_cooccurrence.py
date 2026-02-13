@@ -1,5 +1,5 @@
-from wellspring.pipeline.runner import _build_cooccurrence_relations
-from wellspring.schemas import Entity
+from mimir.pipeline.runner import _build_cooccurrence_relations
+from mimir.schemas import Entity
 
 
 def test_cooccurrence_limits_entities():

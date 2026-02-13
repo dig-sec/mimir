@@ -201,7 +201,7 @@ class ElasticGraphStore(_ElasticBase, GraphStore):
         hosts: List[str],
         username: Optional[str] = None,
         password: Optional[str] = None,
-        index_prefix: str = "wellspring",
+        index_prefix: str = "mimir",
         verify_certs: bool = True,
     ) -> None:
         super().__init__(hosts, username, password, index_prefix, verify_certs)
@@ -1313,7 +1313,7 @@ class ElasticRunStore(_ElasticBase, RunStore):
         hosts: List[str],
         username: Optional[str] = None,
         password: Optional[str] = None,
-        index_prefix: str = "wellspring",
+        index_prefix: str = "mimir",
         verify_certs: bool = True,
     ) -> None:
         super().__init__(hosts, username, password, index_prefix, verify_certs)
@@ -1636,7 +1636,7 @@ class ElasticMetricsStore(_ElasticBase, MetricsStore):
         hosts: List[str],
         username: Optional[str] = None,
         password: Optional[str] = None,
-        index_prefix: str = "wellspring",
+        index_prefix: str = "mimir",
         verify_certs: bool = True,
         cti_level_thresholds: Optional[List[float]] = None,
     ) -> None:
@@ -2907,8 +2907,8 @@ class ElasticMetricsStore(_ElasticBase, MetricsStore):
         while True:
             composite_body: Dict[str, Any] = {
                 "sources": [
-                    {"entity_type": {"terms": {"field": "entity_type"}}},
-                    {"entity_id": {"terms": {"field": "entity_id"}}},
+                    {"entity_type": {"terms": {"field": "entity_type.keyword"}}},
+                    {"entity_id": {"terms": {"field": "entity_id.keyword"}}},
                 ],
                 "size": 2000,
             }
@@ -3126,10 +3126,10 @@ class ElasticMetricsStore(_ElasticBase, MetricsStore):
             sort=[
                 {"bucket_start": "desc"},
                 {"evidence_count": "desc"},
-                {"entity_name": "asc"},
+                {"entity_name.keyword": "asc"},
             ],
             aggs={
-                "active_actors": {"cardinality": {"field": "entity_id"}},
+                "active_actors": {"cardinality": {"field": "entity_id.keyword"}},
                 "evidence_total": {"sum": {"field": "evidence_count"}},
                 "latest_bucket": {"max": {"field": "bucket_start"}},
                 "latest_rollup": {"max": {"field": "rollup_generated_at"}},

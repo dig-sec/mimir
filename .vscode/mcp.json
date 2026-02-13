@@ -1,9 +1,9 @@
 {
   "servers": {
-    "wellspring": {
+    "mimir": {
       "type": "stdio",
       "command": "${workspaceFolder}/.venv/bin/python",
-      "args": ["-m", "wellspring.mcp.server"],
+      "args": ["-m", "mimir.mcp.server"],
       "cwd": "${workspaceFolder}",
       "envFile": "${workspaceFolder}/.env"
     }

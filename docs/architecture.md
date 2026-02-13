@@ -1,6 +1,6 @@
-# Wellspring Architecture
+# Mimir Architecture
 
-Wellspring is an LLM-powered **cyber-threat intelligence knowledge-graph** platform.
+Mimir is an LLM-powered **cyber-threat intelligence knowledge-graph** platform.
 It ingests structured and unstructured data from multiple sources, extracts
 entities and relationships using a local LLM, and stores everything in an
 Elasticsearch-backed graph with full provenance tracking.
@@ -74,17 +74,17 @@ Elasticsearch-backed graph with full provenance tracking.
 
 ## Process Architecture
 
-Wellspring runs as **six independent processes**, all built from the same
+Mimir runs as **six independent processes**, all built from the same
 Docker image with different `command` overrides:
 
 | Service | Module | Purpose |
 |---------|--------|---------|
-| **api** | `wellspring.api.app` (uvicorn) | FastAPI web server — UI, REST API, export |
-| **llm-worker** | `wellspring.worker.llm_worker` | Consumes run queue, processes text through LLM |
-| **feedly-worker** | `wellspring.worker.feedly_worker` | Periodic Feedly article sync from Elasticsearch |
-| **opencti-worker** | `wellspring.worker.opencti_worker` | Periodic entity/relation sync from OpenCTI |
-| **elastic-worker** | `wellspring.worker.elastic_worker` | Periodic document pull from ES source indices |
-| **backfill** | `wellspring.backfill` | One-shot historical data backfill (on-demand) |
+| **api** | `mimir.api.app` (uvicorn) | FastAPI web server — UI, REST API, export |
+| **llm-worker** | `mimir.worker.llm_worker` | Consumes run queue, processes text through LLM |
+| **feedly-worker** | `mimir.worker.feedly_worker` | Periodic Feedly article sync from Elasticsearch |
+| **opencti-worker** | `mimir.worker.opencti_worker` | Periodic entity/relation sync from OpenCTI |
+| **elastic-worker** | `mimir.worker.elastic_worker` | Periodic document pull from ES source indices |
+| **backfill** | `mimir.backfill` | One-shot historical data backfill (on-demand) |
 
 ### Why separate processes?
 
@@ -109,7 +109,7 @@ The current architecture solves both:
 ## Module Map
 
 ```
-src/wellspring/
+src/mimir/
 ├── __init__.py
 │
 ├── config.py              # Settings dataclass — all env-var driven
@@ -162,8 +162,8 @@ src/wellspring/
 │   └── runner.py          # process_run() — chunk text → LLM → graph upsert
 │
 ├── stix/
-│   ├── exporter.py        # Wellspring graph → STIX 2.1 bundles
-│   └── importer.py        # STIX 2.1 bundles → Wellspring graph
+│   ├── exporter.py        # Mimir graph → STIX 2.1 bundles
+│   └── importer.py        # STIX 2.1 bundles → Mimir graph
 │
 ├── storage/
 │   ├── base.py            # Abstract GraphStore interface
@@ -252,7 +252,7 @@ User (Web UI / REST API / MCP)
 ## Storage Layer
 
 All persistence is in **Elasticsearch** with indices prefixed by
-`ELASTICSEARCH_INDEX_PREFIX` (default `wellspring`):
+`ELASTICSEARCH_INDEX_PREFIX` (default `mimir`):
 
 | Index | Contents |
 |-------|----------|
@@ -400,11 +400,11 @@ Configuration is in `.vscode/mcp.json` for workspace-level integration.
 
 ## STIX 2.1 Integration
 
-Wellspring supports bidirectional STIX 2.1 exchange:
+Mimir supports bidirectional STIX 2.1 exchange:
 
 - **Export** (`stix/exporter.py`) — Converts graph subsets to valid STIX bundles
   with proper SDO/SRO type mapping. Usable for TAXII feeds, MISP, OpenCTI import.
-- **Import** (`stix/importer.py`) — Parses STIX bundles into Wellspring entities
+- **Import** (`stix/importer.py`) — Parses STIX bundles into Mimir entities
   and relations, bypassing LLM extraction for already-structured data.
 
 ---
@@ -420,7 +420,7 @@ All configuration is via environment variables, read at startup by the
 | `ELASTICSEARCH_HOST` | `http://127.0.0.1:9200` | Elasticsearch cluster URL |
 | `ELASTICSEARCH_USER` | _(empty)_ | Elasticsearch username |
 | `ELASTICSEARCH_PASSWORD` | _(empty)_ | Elasticsearch password |
-| `ELASTICSEARCH_INDEX_PREFIX` | `wellspring` | Index name prefix |
+| `ELASTICSEARCH_INDEX_PREFIX` | `mimir` | Index name prefix |
 | `ELASTICSEARCH_VERIFY_CERTS` | `1` | TLS certificate verification |
 | `LOG_LEVEL` | `INFO` | Python logging level |
 
@@ -511,13 +511,13 @@ docker compose logs -f feedly-worker
 pip install -e ".[dev]"
 
 # Run the API
-uvicorn wellspring.api.app:app --reload --port 8000
+uvicorn mimir.api.app:app --reload --port 8000
 
 # Run individual workers
-python -m wellspring.worker.llm_worker
-python -m wellspring.worker.feedly_worker
-python -m wellspring.worker.opencti_worker
-python -m wellspring.worker.elastic_worker
+python -m mimir.worker.llm_worker
+python -m mimir.worker.feedly_worker
+python -m mimir.worker.opencti_worker
+python -m mimir.worker.elastic_worker
 ```
 
 ### Scaling Considerations
@@ -562,11 +562,11 @@ Use this pattern when adding new source connectors.
 
 Copy from:
 
-- `src/wellspring/worker/connector_worker_template.py`
+- `src/mimir/worker/connector_worker_template.py`
 
 Recommended copy flow:
 
-1. Copy template to `src/wellspring/worker/<name>_worker.py`
+1. Copy template to `src/mimir/worker/<name>_worker.py`
 2. Replace `_run_sync_once(...)` with your connector call
 3. Add connector-specific config fields to `config.py`
 4. Add service to `docker-compose.yml`

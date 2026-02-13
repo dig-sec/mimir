@@ -140,7 +140,7 @@ def root(request: Request) -> str:
     root_path = str(request.scope.get("root_path") or "")
     return render_root_ui(
         root_path=root_path,
-        api_base_url=settings.wellspring_api_base_url,
+        api_base_url=settings.mimir_api_base_url,
     )
 
 
@@ -326,7 +326,7 @@ def export_csv(
     return Response(
         content=data,
         media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=wellspring-export.zip"},
+        headers={"Content-Disposition": "attachment; filename=mimir-export.zip"},
     )
 
 
@@ -345,7 +345,7 @@ def export_graphml_endpoint(
         content=xml,
         media_type="application/xml",
         headers={
-            "Content-Disposition": "attachment; filename=wellspring-export.graphml"
+            "Content-Disposition": "attachment; filename=mimir-export.graphml"
         },
     )
 
@@ -377,7 +377,7 @@ def export_markdown_endpoint(
     return Response(
         content=md,
         media_type="text/markdown",
-        headers={"Content-Disposition": "attachment; filename=wellspring-export.md"},
+        headers={"Content-Disposition": "attachment; filename=mimir-export.md"},
     )
 
 
@@ -398,7 +398,7 @@ def post_export_csv(payload: Subgraph):
     return Response(
         content=data,
         media_type="application/zip",
-        headers={"Content-Disposition": "attachment; filename=wellspring-export.zip"},
+        headers={"Content-Disposition": "attachment; filename=mimir-export.zip"},
     )
 
 
@@ -410,7 +410,7 @@ def post_export_graphml(payload: Subgraph):
         content=xml,
         media_type="application/xml",
         headers={
-            "Content-Disposition": "attachment; filename=wellspring-export.graphml"
+            "Content-Disposition": "attachment; filename=mimir-export.graphml"
         },
     )
 
@@ -428,7 +428,7 @@ def post_export_markdown(payload: Subgraph):
     return Response(
         content=md,
         media_type="text/markdown",
-        headers={"Content-Disposition": "attachment; filename=wellspring-export.md"},
+        headers={"Content-Disposition": "attachment; filename=mimir-export.md"},
     )
 
 
@@ -503,11 +503,11 @@ def query(payload: QueryRequest, response: Response) -> Subgraph:
         ),
     )
     if truncated:
-        response.headers["X-Wellspring-Graph-Truncated"] = "1"
-        response.headers["X-Wellspring-Original-Nodes"] = str(len(subgraph.nodes))
-        response.headers["X-Wellspring-Original-Edges"] = str(len(subgraph.edges))
-        response.headers["X-Wellspring-Limited-Nodes"] = str(len(capped_subgraph.nodes))
-        response.headers["X-Wellspring-Limited-Edges"] = str(len(capped_subgraph.edges))
+        response.headers["X-Mimir-Graph-Truncated"] = "1"
+        response.headers["X-Mimir-Original-Nodes"] = str(len(subgraph.nodes))
+        response.headers["X-Mimir-Original-Edges"] = str(len(subgraph.edges))
+        response.headers["X-Mimir-Limited-Nodes"] = str(len(capped_subgraph.nodes))
+        response.headers["X-Mimir-Limited-Edges"] = str(len(capped_subgraph.edges))
     return capped_subgraph
 
 
@@ -575,7 +575,7 @@ def visualize(
         max_nodes=settings.query_max_nodes,
         max_edges=settings.query_max_edges,
     )
-    title = f"Wellspring Graph: {seed_name or seed_id}"
+    title = f"Mimir Graph: {seed_name or seed_id}"
     return render_html(subgraph, title=title)
 
 

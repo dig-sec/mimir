@@ -1,5 +1,5 @@
-from wellspring.graph_limits import limit_subgraph
-from wellspring.schemas import Subgraph, SubgraphEdge, SubgraphNode
+from mimir.graph_limits import limit_subgraph
+from mimir.schemas import Subgraph, SubgraphEdge, SubgraphNode
 
 
 def _node(node_id: str) -> SubgraphNode:

@@ -1,4 +1,4 @@
-from wellspring.elastic_source.sync import (
+from mimir.elastic_source.sync import (
     _align_document,
     _build_document_text,
     _build_run_id,

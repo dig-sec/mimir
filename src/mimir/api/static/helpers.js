@@ -20,11 +20,11 @@ function _normalizeBase(base) {
 }
 
 function _rootPathBase() {
-  return _normalizeBase(window.__WELLSPRING_ROOT_PATH__ || '');
+  return _normalizeBase(window.__MIMIR_ROOT_PATH__ || window.__WELLSPRING_ROOT_PATH__ || '');
 }
 
 function _explicitApiBase() {
-  return _normalizeBase(window.__WELLSPRING_API_BASE__ || '');
+  return _normalizeBase(window.__MIMIR_API_BASE__ || window.__WELLSPRING_API_BASE__ || '');
 }
 
 export function apiUrl(path) {

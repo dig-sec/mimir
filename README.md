@@ -1,4 +1,4 @@
-# Wellspring
+# Mimir
 
 LLM-Native Knowledge Graph (KG) Platform. This repo contains a Python 3.11+ implementation that ingests unstructured text, extracts subject-predicate-object triples with Ollama, normalizes and deduplicates entities, stores a persistent knowledge graph with provenance, and exposes APIs for query, explanation, and visualization.
 
@@ -38,7 +38,7 @@ Environment variables:
 - `ELASTICSEARCH_HOST` (default: `http://127.0.0.1:9200`, comma-separated for multiple hosts)
 - `ELASTICSEARCH_USER` (default: empty)
 - `ELASTICSEARCH_PASSWORD` (default: empty)
-- `ELASTICSEARCH_INDEX_PREFIX` (default: `wellspring`)
+- `ELASTICSEARCH_INDEX_PREFIX` (default: `mimir`)
 - `ELASTICSEARCH_VERIFY_CERTS` (default: `1`)
 - `ELASTIC_CONNECTOR_HOSTS` (default: `ELASTICSEARCH_HOST`)
 - `ELASTIC_CONNECTOR_USER` (default: `ELASTICSEARCH_USER`)
@@ -66,7 +66,8 @@ Environment variables:
 - `CHUNK_OVERLAP` (default: `200`)
 - `PROMPT_VERSION` (default: `v1`)
 - `LOG_LEVEL` (default: `INFO`)
-- `WELLSPRING_API_BASE_URL` (default: empty; optional absolute API base URL for UI fetches)
+- `MIMIR_API_BASE_URL` (default: empty; optional absolute API base URL for UI fetches)
+  - Backward compatible fallback: `WELLSPRING_API_BASE_URL`
 - `QUERY_MAX_NODES` (default: `400`; soft cap for `/query` and `/visualize`, `0` disables)
 - `QUERY_MAX_EDGES` (default: `1200`; soft cap for `/query` and `/visualize`, `0` disables)
 - `ENABLE_COOCCURRENCE` (default: `0`)
@@ -94,7 +95,7 @@ export ELASTICSEARCH_PASSWORD='your-password'
 
 ### Elasticsearch source connector
 
-Pull docs from external/source Elasticsearch indices into Wellspring's run queue:
+Pull docs from external/source Elasticsearch indices into Mimir's run queue:
 
 ```bash
 curl -X POST "http://localhost:8000/api/elasticsearch/pull"
@@ -144,7 +145,7 @@ curl "http://localhost:8000/api/timeline/threat-actors?interval=month&top_n=10&s
 ```
 
 Daily threat-actor metrics are rolled up into the Elasticsearch index
-`<ELASTICSEARCH_INDEX_PREFIX>-metrics` (default: `wellspring-metrics`).
+`<ELASTICSEARCH_INDEX_PREFIX>-metrics` (default: `mimir-metrics`).
 The worker updates this on a schedule, and `/api/stats` exposes freshness and
 active-actor counts for the last 30 days.
 PIR trend summaries are also precomputed daily in this metrics index and served

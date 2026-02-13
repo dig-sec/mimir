@@ -124,7 +124,7 @@ def export_json(subgraph: Subgraph) -> Dict[str, Any]:
     return {
         "meta": {
             "exported_at": datetime.now(timezone.utc).isoformat(),
-            "tool": "Wellspring",
+            "tool": "Mimir",
             "entity_count": len(subgraph.nodes),
             "relation_count": len(subgraph.edges),
         },
@@ -152,7 +152,7 @@ def export_markdown(subgraph: Subgraph) -> str:
     """Return a human-readable Markdown report of the knowledge graph."""
     name_map = {n.id: n.name for n in subgraph.nodes}
     lines: List[str] = []
-    lines.append("# Wellspring — Knowledge Graph Export")
+    lines.append("# Mimir — Knowledge Graph Export")
     lines.append("")
     lines.append(
         f"**Exported:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"

@@ -1,7 +1,7 @@
 """Feedly connector worker.
 
 Standalone worker process that periodically syncs Feedly articles from
-Elasticsearch into the Wellspring graph.  Replaces the inline Feedly
+Elasticsearch into the Mimir graph.  Replaces the inline Feedly
 sync that previously ran inside the API scheduler.
 
 The worker:

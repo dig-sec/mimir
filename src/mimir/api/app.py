@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Wellspring API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Mimir API", version="0.1.0", lifespan=lifespan)
 
 # Serve static assets (CSS, JS)
 _static_dir = Path(__file__).parent / "static"

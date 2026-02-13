@@ -22,10 +22,13 @@ class Settings:
     elastic_hosts: str = os.getenv("ELASTICSEARCH_HOST", "http://127.0.0.1:9200")
     elastic_user: str = os.getenv("ELASTICSEARCH_USER", "")
     elastic_password: str = os.getenv("ELASTICSEARCH_PASSWORD", "")
-    elastic_index_prefix: str = os.getenv("ELASTICSEARCH_INDEX_PREFIX", "wellspring")
+    elastic_index_prefix: str = os.getenv("ELASTICSEARCH_INDEX_PREFIX", "mimir")
     elastic_verify_certs: bool = _env_bool("ELASTICSEARCH_VERIFY_CERTS", "1")
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
-    wellspring_api_base_url: str = os.getenv("WELLSPRING_API_BASE_URL", "")
+    mimir_api_base_url: str = os.getenv(
+        "MIMIR_API_BASE_URL",
+        os.getenv("WELLSPRING_API_BASE_URL", ""),
+    )
     query_max_nodes: int = int(os.getenv("QUERY_MAX_NODES", "400"))
     query_max_edges: int = int(os.getenv("QUERY_MAX_EDGES", "1200"))
     enable_cooccurrence: bool = os.getenv("ENABLE_COOCCURRENCE", "0") == "1"

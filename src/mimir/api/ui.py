@@ -24,14 +24,14 @@ def render_root_ui(root_path: str = "", api_base_url: str = "") -> str:
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Wellspring</title>
+  <title>Mimir</title>
   <link rel="stylesheet" href="{static_prefix}/style.css" />
 </head>
 <body>
 
   <!-- ─── HEADER ──────────────────────────── -->
   <header>
-    <h1>Wellspring</h1>
+    <h1>Mimir</h1>
     <div class="tab-bar">
       <button class="tab-btn active" data-tab="explore">Explore</button>
       <button class="tab-btn" data-tab="pir">PIR</button>
@@ -314,8 +314,11 @@ def render_root_ui(root_path: str = "", api_base_url: str = "") -> str:
   <div class="toasts" id="toasts"></div>
 
   <script>
-    window.__WELLSPRING_ROOT_PATH__ = {root_path_json};
-    window.__WELLSPRING_API_BASE__ = {api_base_json};
+    window.__MIMIR_ROOT_PATH__ = {root_path_json};
+    window.__MIMIR_API_BASE__ = {api_base_json};
+    // Backward compatibility for any older custom scripts.
+    window.__WELLSPRING_ROOT_PATH__ = window.__MIMIR_ROOT_PATH__;
+    window.__WELLSPRING_API_BASE__ = window.__MIMIR_API_BASE__;
   </script>
   <script src="{static_prefix}/vendor/d3.v7.min.js"></script>
   <script type="module" src="{static_prefix}/main.js"></script>

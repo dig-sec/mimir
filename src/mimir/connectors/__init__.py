@@ -1,4 +1,4 @@
-"""Feedly → Wellspring connector.
+"""Feedly → Mimir connector.
 
 Reads articles from one or more Elasticsearch indices (e.g. ``feedly_news``)
 and imports the Feedly-AI-extracted entities, topics, and IOCs as structured
@@ -61,7 +61,7 @@ def _det_prov_id(
     return str(uuid5(_NS_PROVENANCE, material))
 
 
-# ── Feedly entity-type → Wellspring entity-type (STIX 2.1 aligned) ──
+# ── Feedly entity-type → Mimir entity-type (STIX 2.1 aligned) ──
 _FEEDLY_TYPE_MAP: Dict[str, str] = {
     "threatActor": "threat_actor",  # STIX: threat-actor
     "malwareFamily": "malware",  # STIX: malware
@@ -75,7 +75,7 @@ _FEEDLY_TYPE_MAP: Dict[str, str] = {
     # other: skipped
 }
 
-# IOC type → Wellspring entity type
+# IOC type → Mimir entity type
 _IOC_TYPE_MAP: Dict[str, str] = {
     "url": "indicator",
     "ip": "indicator",

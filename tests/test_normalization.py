@@ -1,4 +1,4 @@
-from wellspring.normalize import (
+from mimir.normalize import (
     canonical_entity_key,
     normalize_entity_name,
     normalize_predicate,

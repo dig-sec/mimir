@@ -1,4 +1,4 @@
-"""Wellspring knowledge-graph → STIX 2.1 bundle exporter.
+"""Mimir knowledge-graph → STIX 2.1 bundle exporter.
 
 Converts entities and relations from a subgraph query into valid STIX 2.1
 JSON bundles that can be shared via TAXII, imported into MISP / OpenCTI, etc.
@@ -12,7 +12,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from ..schemas import Subgraph, SubgraphEdge, SubgraphNode
 
-# Wellspring entity type → STIX SDO type
+# Mimir entity type → STIX SDO type
 _ENTITY_TYPE_TO_SDO: Dict[str, str] = {
     "threat_actor": "threat-actor",
     "malware": "malware",
@@ -29,7 +29,7 @@ _ENTITY_TYPE_TO_SDO: Dict[str, str] = {
     "report": "report",
 }
 
-# Wellspring predicate → STIX relationship_type
+# Mimir predicate → STIX relationship_type
 _PREDICATE_TO_SRO: Dict[str, str] = {
     "uses": "uses",
     "uses_technique": "uses",
@@ -73,16 +73,16 @@ _PREDICATE_TO_SRO: Dict[str, str] = {
     "contains_ioc": "related-to",
 }
 
-# Predicates where the Wellspring relation direction is reversed vs STIX
+# Predicates where the Mimir relation direction is reversed vs STIX
 _REVERSED_PREDICATES = frozenset({"mitigated_by", "dropped_by"})
 
-# Deterministic STIX UUID namespace for Wellspring entities
-_WELLSPRING_NS = uuid5(NAMESPACE_URL, "wellspring.graph")
+# Deterministic STIX UUID namespace for Mimir entities
+_MIMIR_NS = uuid5(NAMESPACE_URL, "mimir.graph")
 
 
-def _deterministic_stix_id(sdo_type: str, wellspring_id: str) -> str:
-    """Generate a deterministic STIX id from the Wellspring entity id."""
-    uid = uuid5(_WELLSPRING_NS, f"{sdo_type}:{wellspring_id}")
+def _deterministic_stix_id(sdo_type: str, mimir_id: str) -> str:
+    """Generate a deterministic STIX id from the Mimir entity id."""
+    uid = uuid5(_MIMIR_NS, f"{sdo_type}:{mimir_id}")
     return f"{sdo_type}--{uid}"
 
 
@@ -91,7 +91,7 @@ def _now_iso() -> str:
 
 
 def _node_to_sdo(node: SubgraphNode, created: str) -> Optional[Dict[str, Any]]:
-    """Convert a Wellspring subgraph node into a STIX SDO dict."""
+    """Convert a Mimir subgraph node into a STIX SDO dict."""
     sdo_type = _ENTITY_TYPE_TO_SDO.get(node.type or "", "identity")
     stix_id = _deterministic_stix_id(sdo_type, node.id)
 
@@ -125,15 +125,15 @@ def _edge_to_sro(
     node_stix_ids: Dict[str, str],
     created: str,
 ) -> Optional[Dict[str, Any]]:
-    """Convert a Wellspring subgraph edge into a STIX SRO dict."""
+    """Convert a Mimir subgraph edge into a STIX SRO dict."""
     relationship_type = _PREDICATE_TO_SRO.get(edge.predicate, "related-to")
     reversed_ = edge.predicate in _REVERSED_PREDICATES
 
-    source_ws_id = edge.object_id if reversed_ else edge.subject_id
-    target_ws_id = edge.subject_id if reversed_ else edge.object_id
+    source_id = edge.object_id if reversed_ else edge.subject_id
+    target_id = edge.subject_id if reversed_ else edge.object_id
 
-    source_stix = node_stix_ids.get(source_ws_id)
-    target_stix = node_stix_ids.get(target_ws_id)
+    source_stix = node_stix_ids.get(source_id)
+    target_stix = node_stix_ids.get(target_id)
 
     if not source_stix or not target_stix:
         return None
@@ -154,12 +154,12 @@ def _edge_to_sro(
 
 
 def export_stix_bundle(subgraph: Subgraph) -> Dict[str, Any]:
-    """Export a Wellspring subgraph as a STIX 2.1 bundle.
+    """Export a Mimir subgraph as a STIX 2.1 bundle.
 
     Parameters
     ----------
     subgraph:
-        Wellspring ``Subgraph`` (nodes + edges).
+        Mimir ``Subgraph`` (nodes + edges).
 
     Returns
     -------
@@ -182,7 +182,7 @@ def export_stix_bundle(subgraph: Subgraph) -> Dict[str, Any]:
         if sro:
             objects.append(sro)
 
-    bundle_id = f"bundle--{uuid5(_WELLSPRING_NS, created)}"
+    bundle_id = f"bundle--{uuid5(_MIMIR_NS, created)}"
 
     return {
         "type": "bundle",

@@ -21,7 +21,7 @@ def render_html(subgraph: Subgraph, title: Optional[str] = None) -> str:
             for edge in subgraph.edges
         ],
     }
-    title = title or "Wellspring Graph"
+    title = title or "Mimir Graph"
     data_json = json.dumps(payload)
     return f"""<!doctype html>
 <html lang="en">

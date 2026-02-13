@@ -1,4 +1,4 @@
-from wellspring.chunking import chunk_text
+from mimir.chunking import chunk_text
 
 
 def test_chunking_deterministic():

@@ -1,5 +1,5 @@
 Metadata-Version: 2.4
-Name: wellspring
+Name: mimir
 Version: 0.1.0
 Summary: LLM-Native Knowledge Graph (KG) Platform
 License: MIT
@@ -15,7 +15,7 @@ Requires-Dist: mcp[cli]>=1.0
 Provides-Extra: dev
 Requires-Dist: pytest>=8.0; extra == "dev"
 
-# Wellspring
+# Mimir
 
 LLM-Native Knowledge Graph (KG) Platform. This repo contains a Python 3.11+ implementation that ingests unstructured text, extracts subject-predicate-object triples with Ollama, normalizes and deduplicates entities, stores a persistent knowledge graph with provenance, and exposes APIs for query, explanation, and visualization.
 
@@ -55,7 +55,7 @@ Environment variables:
 - `ELASTICSEARCH_HOST` (default: `http://127.0.0.1:9200`, comma-separated for multiple hosts)
 - `ELASTICSEARCH_USER` (default: empty)
 - `ELASTICSEARCH_PASSWORD` (default: empty)
-- `ELASTICSEARCH_INDEX_PREFIX` (default: `wellspring`)
+- `ELASTICSEARCH_INDEX_PREFIX` (default: `mimir`)
 - `ELASTICSEARCH_VERIFY_CERTS` (default: `1`)
 - `ELASTIC_CONNECTOR_HOSTS` (default: `ELASTICSEARCH_HOST`)
 - `ELASTIC_CONNECTOR_USER` (default: `ELASTICSEARCH_USER`)
@@ -105,7 +105,7 @@ export ELASTICSEARCH_PASSWORD='your-password'
 
 ### Elasticsearch source connector
 
-Pull docs from external/source Elasticsearch indices into Wellspring's run queue:
+Pull docs from external/source Elasticsearch indices into Mimir's run queue:
 
 ```bash
 curl -X POST "http://localhost:8000/api/elasticsearch/pull"
@@ -154,7 +154,7 @@ curl "http://localhost:8000/api/timeline/threat-actors?interval=month&top_n=10&s
 ```
 
 Daily threat-actor metrics are rolled up into the Elasticsearch index
-`<ELASTICSEARCH_INDEX_PREFIX>-metrics` (default: `wellspring-metrics`).
+`<ELASTICSEARCH_INDEX_PREFIX>-metrics` (default: `mimir-metrics`).
 The worker updates this on a schedule, and `/api/stats` exposes freshness and
 active-actor counts for the last 30 days.
 

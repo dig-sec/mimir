@@ -1,4 +1,4 @@
-"""Sync from OpenCTI into Wellspring.
+"""Sync from OpenCTI into Mimir.
 
 All functions are synchronous — designed to run in a background thread.
 Entities are processed page-by-page (streaming) to keep memory constant.
@@ -42,7 +42,7 @@ def _det_prov_id(
     return str(uuid5(_NS_PROVENANCE, material))
 
 
-# OpenCTI entity_type → Wellspring entity type
+# OpenCTI entity_type → Mimir entity type
 _TYPE_MAP: Dict[str, str] = {
     "Malware": "malware",
     "Threat-Actor": "threat_actor",
@@ -79,7 +79,7 @@ def pull_from_opencti(
     settings: Any = None,
     progress_cb: Any = None,
 ) -> SyncResult:
-    """Pull entities from OpenCTI and import into Wellspring.
+    """Pull entities from OpenCTI and import into Mimir.
 
     Processes entities page-by-page via streaming iterators so memory
     stays constant regardless of how many entities OpenCTI has.

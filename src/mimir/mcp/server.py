@@ -1,4 +1,4 @@
-"""Wellspring MCP server – exposes the knowledge-graph to VS Code Copilot."""
+"""Mimir MCP server – exposes the knowledge-graph to VS Code Copilot."""
 
 from __future__ import annotations
 
@@ -20,9 +20,9 @@ run_store = create_run_store(settings)
 metrics_store = create_metrics_store(settings)
 
 mcp = FastMCP(
-    "Wellspring",
+    "Mimir",
     instructions=(
-        "Wellspring is an LLM-powered knowledge-graph platform focused on "
+        "Mimir is an LLM-powered knowledge-graph platform focused on "
         "cyber-threat intelligence. Use these tools to search entities "
         "(malware, threat actors, campaigns …), explore their relationships, "
         "inspect provenance, and get high-level statistics."
@@ -84,7 +84,7 @@ def _fmt(obj: Any) -> str:
 
 @mcp.tool()
 def search_entities(query: str, entity_type: Optional[str] = None) -> str:
-    """Search for entities in the Wellspring knowledge-graph.
+    """Search for entities in the Mimir knowledge-graph.
 
     Args:
         query: Free-text search string (name, alias, keyword).
@@ -236,7 +236,7 @@ def explain_relation(relation_id: str) -> str:
 
 @mcp.tool()
 def graph_stats() -> str:
-    """Get high-level statistics about the Wellspring knowledge-graph.
+    """Get high-level statistics about the Mimir knowledge-graph.
 
     Returns:
         JSON with entity/relation counts, run stats, and throughput metrics.

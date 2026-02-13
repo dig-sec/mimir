@@ -1,7 +1,7 @@
 """OpenCTI connector worker.
 
 Standalone worker process that periodically syncs entities, relations,
-and reports from OpenCTI into the Wellspring graph.  Replaces the
+and reports from OpenCTI into the Mimir graph.  Replaces the
 inline OpenCTI sync that previously ran inside the API scheduler.
 
 The worker:
