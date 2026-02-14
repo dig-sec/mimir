@@ -67,6 +67,23 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  # ── Malware feed worker ────────────────────────────────────
+  malware-worker:
+    build: .
+    restart: on-failure
+    command: ["python", "-m", "mimir.worker.malware_worker"]
+    env_file: .env
+    environment:
+      - MALWARE_WORKER_ENABLED=1
+      - MALWARE_WORKER_INTERVAL_MINUTES=30
+      - MALWARE_WORKER_INDICES=mwdb-openrelik,dailymalwarefeed
+      - MALWARE_WORKER_LOOKBACK_MINUTES=180
+      - MALWARE_WORKER_MAX_PER_INDEX=500
+    volumes:
+      - /mnt/nvme0n1p1/mimir:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
   backfill:
     build: .
     profiles: ["backfill"]

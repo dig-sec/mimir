@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+import json
 from collections import Counter
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
@@ -133,6 +135,225 @@ def _get_elastic_connector_client(
         verify_certs=settings.elastic_connector_verify_certs,
         timeout=settings.elastic_connector_timeout_seconds,
     )
+
+
+def _worker_specs() -> List[Dict[str, Any]]:
+    all_indices = settings.elastic_connector_indices_list or []
+    excluded = set(settings.elastic_worker_exclude_indices_list)
+    elastic_indices = [idx for idx in all_indices if idx not in excluded]
+    malware_indices = settings.malware_worker_indices_list
+
+    feedly_enabled = (
+        settings.elastic_connector_enabled
+        and bool(settings.elastic_connector_hosts_list)
+        and settings.feedly_worker_interval_minutes > 0
+    )
+    opencti_enabled = (
+        bool(settings.opencti_url)
+        and bool(settings.opencti_token)
+        and settings.opencti_worker_interval_minutes > 0
+    )
+    elastic_enabled = (
+        settings.elastic_connector_enabled
+        and bool(settings.elastic_connector_hosts_list)
+        and settings.elastic_worker_interval_minutes > 0
+        and bool(elastic_indices)
+    )
+    malware_enabled = (
+        settings.malware_worker_enabled
+        and settings.elastic_connector_enabled
+        and bool(settings.elastic_connector_hosts_list)
+        and settings.malware_worker_interval_minutes > 0
+        and bool(malware_indices)
+    )
+
+    return [
+        {
+            "id": "llm-worker",
+            "label": "LLM Extraction",
+            "enabled": True,
+            "interval_seconds": max(settings.llm_worker_poll_seconds, 1),
+            "disabled_reason": "",
+        },
+        {
+            "id": "feedly-worker",
+            "label": "Feedly Sync",
+            "enabled": feedly_enabled,
+            "interval_seconds": max(settings.feedly_worker_interval_minutes, 0) * 60,
+            "disabled_reason": (
+                ""
+                if feedly_enabled
+                else "requires connector hosts, connector enabled, and interval > 0"
+            ),
+        },
+        {
+            "id": "opencti-worker",
+            "label": "OpenCTI Sync",
+            "enabled": opencti_enabled,
+            "interval_seconds": max(settings.opencti_worker_interval_minutes, 0) * 60,
+            "disabled_reason": (
+                ""
+                if opencti_enabled
+                else "requires OPENCTI_URL, OPENCTI_TOKEN, and interval > 0"
+            ),
+        },
+        {
+            "id": "elastic-worker",
+            "label": "Elasticsearch Source",
+            "enabled": elastic_enabled,
+            "interval_seconds": max(settings.elastic_worker_interval_minutes, 0) * 60,
+            "disabled_reason": (
+                ""
+                if elastic_enabled
+                else (
+                    "all configured indices are excluded"
+                    if (
+                        settings.elastic_connector_enabled
+                        and bool(settings.elastic_connector_hosts_list)
+                        and settings.elastic_worker_interval_minutes > 0
+                        and not elastic_indices
+                        and bool(all_indices)
+                    )
+                    else "requires connector hosts, connector enabled, interval > 0, and non-excluded indices"
+                )
+            ),
+        },
+        {
+            "id": "malware-worker",
+            "label": "Malware Sync",
+            "enabled": malware_enabled,
+            "interval_seconds": max(settings.malware_worker_interval_minutes, 0) * 60,
+            "disabled_reason": (
+                ""
+                if malware_enabled
+                else "requires MALWARE_WORKER_ENABLED=1, connector hosts, connector enabled, interval > 0, and indices"
+            ),
+        },
+    ]
+
+
+def _iter_worker_heartbeat_files(worker_id: str) -> List[Path]:
+    base = Path(settings.worker_heartbeat_dir).expanduser()
+    files: Dict[str, Path] = {}
+    for pattern in (f"{worker_id}.json", f"{worker_id}--*.json"):
+        for path in base.glob(pattern):
+            files[str(path)] = path
+    return list(files.values())
+
+
+def _read_worker_heartbeats(worker_id: str) -> List[Dict[str, Any]]:
+    records: List[Dict[str, Any]] = []
+    for path in _iter_worker_heartbeat_files(worker_id):
+        try:
+            raw = path.read_text(encoding="utf-8")
+            data = json.loads(raw)
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        payload_worker_id = str(data.get("worker_id") or "").strip()
+        if payload_worker_id and payload_worker_id != worker_id:
+            continue
+
+        updated_at = str(data.get("updated_at") or "").strip() or None
+        updated_dt = _parse_iso_datetime(updated_at) if updated_at else None
+        if updated_dt is None:
+            try:
+                updated_dt = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+                updated_at = updated_dt.isoformat()
+            except Exception:
+                updated_dt = None
+
+        records.append(
+            {
+                "state": str(data.get("state") or "unknown").strip().lower() or "unknown",
+                "updated_at": updated_at,
+                "updated_dt": _to_utc(updated_dt) if updated_dt is not None else None,
+                "details": data.get("details") if isinstance(data.get("details"), dict) else {},
+                "pid": data.get("pid"),
+                "hostname": data.get("hostname"),
+                "instance_id": data.get("instance_id"),
+                "path": str(path),
+            }
+        )
+
+    records.sort(
+        key=lambda item: (
+            item["updated_dt"] is not None,
+            item["updated_dt"] or datetime.min.replace(tzinfo=timezone.utc),
+        ),
+        reverse=True,
+    )
+    return records
+
+
+def _worker_health_for_state(state: str) -> str:
+    normalized = (state or "").strip().lower()
+    if normalized in {"running", "sleeping"}:
+        return "ok"
+    if normalized in {"starting", "unknown"}:
+        return "pending"
+    if normalized in {"error"}:
+        return "err"
+    if normalized in {"disabled", "stopped", "stale"}:
+        return "warn"
+    return "pending"
+
+
+def _build_worker_statuses() -> List[Dict[str, Any]]:
+    now = datetime.now(timezone.utc)
+    workers: List[Dict[str, Any]] = []
+    for spec in _worker_specs():
+        worker_id = str(spec["id"])
+        enabled = bool(spec["enabled"])
+        interval_seconds = int(spec.get("interval_seconds") or 0)
+        stale_after_seconds = (
+            max(interval_seconds * 3, 90) if interval_seconds > 0 else 90
+        )
+        heartbeats = _read_worker_heartbeats(worker_id)
+
+        state = "disabled" if not enabled else "unknown"
+        updated_at = None
+        age_seconds = None
+        details: Dict[str, Any] = {}
+
+        if heartbeats:
+            freshest = heartbeats[0]
+            updated_at = freshest.get("updated_at")
+            parsed = freshest.get("updated_dt")
+            if isinstance(parsed, datetime):
+                age_seconds = max(int((now - _to_utc(parsed)).total_seconds()), 0)
+            details = dict(freshest.get("details") or {})
+            details["pid"] = freshest.get("pid")
+            details["hostname"] = freshest.get("hostname")
+            details["instance_id"] = freshest.get("instance_id")
+            details["replicas"] = len(heartbeats)
+            if enabled:
+                state = str(freshest.get("state") or state).strip().lower() or state
+            else:
+                details["last_reported_state"] = (
+                    str(freshest.get("state") or "").strip().lower() or "unknown"
+                )
+
+        if enabled and age_seconds is not None and age_seconds > stale_after_seconds:
+            state = "stale"
+
+        workers.append(
+            {
+                "id": worker_id,
+                "label": spec.get("label", worker_id),
+                "enabled": enabled,
+                "state": state,
+                "health": _worker_health_for_state(state),
+                "updated_at": updated_at,
+                "age_seconds": age_seconds,
+                "stale_after_seconds": stale_after_seconds,
+                "interval_seconds": interval_seconds,
+                "disabled_reason": spec.get("disabled_reason", ""),
+                "details": details,
+            }
+        )
+    return workers
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -1864,9 +2085,26 @@ def get_stats(source_uri: Optional[str] = Query(default=None)):
         )
     )
 
+    # Entity type breakdown (ES aggregation)
+    entity_type_counts: Dict[str, int] = {}
+    es_client = getattr(graph_store, "client", None)
+    es_indices = getattr(graph_store, "indices", None)
+    if es_client is not None and es_indices is not None:
+        try:
+            agg_resp = es_client.search(
+                index=es_indices.entities,
+                size=0,
+                aggs={"types": {"terms": {"field": "type", "size": 100}}},
+            )
+            for bucket in agg_resp["aggregations"]["types"]["buckets"]:
+                entity_type_counts[bucket["key"]] = bucket["doc_count"]
+        except Exception:
+            pass
+
     return {
         "entities": graph_store.count_entities(),
         "relations": graph_store.count_relations(),
+        "entity_type_counts": entity_type_counts,
         "runs_total": run_store.count_runs(),
         "runs_pending": run_store.count_runs(status="pending"),
         "runs_running": run_store.count_runs(status="running"),
@@ -1891,6 +2129,7 @@ def get_stats(source_uri: Optional[str] = Query(default=None)):
             "is_stale": cti_is_stale,
             "error": cti_metrics_error,
         },
+        "workers": _build_worker_statuses(),
     }
 
 

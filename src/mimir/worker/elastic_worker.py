@@ -15,11 +15,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
+from datetime import datetime, timezone
+from typing import Optional
 
 from ..config import get_settings
 from ..elastic_source.client import ElasticsearchSourceClient
 from ..elastic_source.sync import pull_from_elasticsearch
 from ..storage.factory import create_run_store
+from .heartbeat import WorkerHeartbeat
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +63,7 @@ def _create_source_client(settings) -> ElasticsearchSourceClient:
 async def elastic_worker_loop() -> None:
     """Periodically pull documents from Elasticsearch source indices."""
     settings = get_settings()
+    heartbeat = WorkerHeartbeat(settings, "elastic-worker")
     logging.basicConfig(level=settings.log_level)
     _shutdown.clear()
 
@@ -67,10 +71,14 @@ async def elastic_worker_loop() -> None:
         logger.info(
             "Elasticsearch worker: disabled (ELASTIC_CONNECTOR_ENABLED=0). Exiting."
         )
+        heartbeat.update(
+            "disabled", {"reason": "ELASTIC_CONNECTOR_ENABLED=0"}
+        )
         return
 
     if not settings.elastic_connector_hosts_list:
         logger.warning("Elasticsearch worker: no connector hosts configured. Exiting.")
+        heartbeat.update("disabled", {"reason": "no connector hosts configured"})
         return
 
     interval_minutes = settings.elastic_worker_interval_minutes
@@ -79,6 +87,13 @@ async def elastic_worker_loop() -> None:
         logger.info(
             "Elasticsearch worker: disabled (ELASTIC_WORKER_INTERVAL_MINUTES=%d). Exiting.",
             interval_minutes,
+        )
+        heartbeat.update(
+            "disabled",
+            {
+                "reason": "ELASTIC_WORKER_INTERVAL_MINUTES<=0",
+                "interval_minutes": interval_minutes,
+            },
         )
         return
 
@@ -98,6 +113,13 @@ async def elastic_worker_loop() -> None:
             "Elasticsearch worker: no indices left after excluding %s. Exiting.",
             exclude or "(none)",
         )
+        heartbeat.update(
+            "disabled",
+            {
+                "reason": "no indices after exclusions",
+                "exclude": sorted(exclude),
+            },
+        )
         return
 
     logger.info(
@@ -105,8 +127,21 @@ async def elastic_worker_loop() -> None:
         interval_minutes,
         indices,
     )
+    heartbeat.update(
+        "running",
+        {
+            "interval_minutes": interval_minutes,
+            "indices": indices,
+        },
+    )
 
     while not _shutdown.is_set():
+        cycle_started_at = datetime.now(timezone.utc).isoformat()
+        cycle_error: Optional[str] = None
+        heartbeat.update(
+            "running",
+            {"cycle_started_at": cycle_started_at, "indices": indices},
+        )
         client = None
         try:
             client = _create_source_client(settings)
@@ -127,11 +162,30 @@ async def elastic_worker_loop() -> None:
                 result.runs_queued,
                 result.skipped_existing,
             )
+            heartbeat.update(
+                "running",
+                {
+                    "cycle_started_at": cycle_started_at,
+                    "indexes_scanned": result.indexes_scanned,
+                    "documents_seen": result.documents_seen,
+                    "runs_queued": result.runs_queued,
+                    "skipped_existing": result.skipped_existing,
+                },
+            )
             if result.errors:
                 for err in result.errors[:5]:
                     logger.warning("ES sync error: %s", err)
-        except Exception:
+        except Exception as exc:
             logger.exception("Elasticsearch sync failed")
+            cycle_error = str(exc) or type(exc).__name__
+            heartbeat.update(
+                "error",
+                {
+                    "cycle_started_at": cycle_started_at,
+                    "indices": indices,
+                    "error": cycle_error[:200],
+                }
+            )
         finally:
             if client:
                 try:
@@ -141,12 +195,27 @@ async def elastic_worker_loop() -> None:
 
         # Wait for next cycle or shutdown
         try:
+            if cycle_error:
+                heartbeat.update(
+                    "error",
+                    {
+                        "cycle_started_at": cycle_started_at,
+                        "indices": indices,
+                        "error": cycle_error[:200],
+                        "next_run_in_seconds": interval,
+                    },
+                )
+            else:
+                heartbeat.update(
+                    "sleeping", {"next_run_in_seconds": interval, "indices": indices}
+                )
             await asyncio.wait_for(_shutdown.wait(), timeout=interval)
             break
         except asyncio.TimeoutError:
             pass
 
     logger.info("Elasticsearch source worker stopped")
+    heartbeat.update("stopped")
 
 
 def main() -> None:

@@ -19,6 +19,7 @@ dependencies = [
 
 [project.scripts]
 mimir-mcp = "mimir.mcp.server:main"
+mimir-malware-worker = "mimir.worker.malware_worker:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-cov>=5.0"]

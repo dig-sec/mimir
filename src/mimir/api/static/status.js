@@ -46,6 +46,18 @@ function badge(status) {
   return `<span class="status-badge ${cls}">${status}</span>`;
 }
 
+function workerBadge(worker) {
+  const cls = { ok: 'ok', pending: 'pending', warn: 'warn', err: 'err' }[worker?.health] || 'pending';
+  const label = (worker?.state || 'unknown').toUpperCase();
+  return `<span class="status-badge ${cls}">${label}</span>`;
+}
+
+function cadence(seconds) {
+  if (!seconds || !isFinite(seconds) || seconds <= 0) return '';
+  if (seconds < 60) return `every ${Math.round(seconds)}s`;
+  return `every ${Math.round(seconds / 60)}m`;
+}
+
 async function refreshStatus() {
   const grid = document.getElementById('statusGrid');
   if (!grid) return;
@@ -80,6 +92,37 @@ async function refreshStatus() {
         </div>
       </div>
     `);
+
+    // ── 1b. Entity Type Breakdown card
+    const typeCounts = stats.entity_type_counts || {};
+    const typeEntries = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+    if (typeEntries.length > 0) {
+      const maxCount = typeEntries[0][1] || 1;
+      const typeColors = {
+        malware_sample: '#ef4444', malware: '#f97316', attack_pattern: '#eab308',
+        capa_rule: '#22c55e', yara_rule: '#06b6d4', indicator: '#8b5cf6',
+        identity: '#3b82f6', threat_actor: '#ec4899', campaign: '#6366f1',
+        report: '#64748b', topic: '#94a3b8', tool: '#14b8a6',
+        infrastructure: '#f59e0b', vulnerability: '#ef4444', mitigation: '#10b981',
+        location: '#6b7280',
+      };
+      const barsHtml = typeEntries.map(([type, count]) => {
+        const pct = (count / maxCount * 100).toFixed(1);
+        const color = typeColors[type] || '#64748b';
+        const label = type.replace(/_/g, ' ');
+        return `
+          <div class="etype-row">
+            <span class="etype-label">${label}</span>
+            <div class="etype-bar-wrap">
+              <div class="etype-bar" style="width:${pct}%;background:${color}"></div>
+            </div>
+            <span class="etype-count">${count.toLocaleString()}</span>
+          </div>`;
+      }).join('');
+      grid.innerHTML += buildCard('Entity Types', 'types', `
+        <div class="etype-chart">${barsHtml}</div>
+      `);
+    }
 
     // ── 2. Ingestion Pipeline card
     const total = num(stats.runs_total);
@@ -125,7 +168,34 @@ async function refreshStatus() {
       </div>
     `);
 
-    // ── 3. Metrics Health card
+    // ── 3. Workers card
+    const workers = Array.isArray(stats.workers) ? stats.workers : [];
+    const workersHtml = workers.length > 0
+      ? workers.map(w => {
+        const d = w.details || {};
+        const detailParts = [];
+        if (d.samples_processed != null) detailParts.push(`${d.samples_processed} samples`);
+        if (d.entities_created != null) detailParts.push(`${d.entities_created} entities`);
+        if (d.relations_created != null) detailParts.push(`${d.relations_created} rels`);
+        if (d.errors != null && d.errors > 0) detailParts.push(`${d.errors} errors`);
+        if (d.indices) detailParts.push(Array.isArray(d.indices) ? d.indices.join(', ') : d.indices);
+        const detailStr = detailParts.length > 0 ? detailParts.join(' · ') : '';
+        return `
+        <div class="status-row">
+          <span class="status-row-label">${w.label || w.id}</span>
+          ${workerBadge(w)}
+          <span class="status-row-detail">${w.age_seconds == null ? 'never seen' : ago(w.age_seconds)}</span>
+          <span class="status-row-detail">${cadence(w.interval_seconds)}</span>
+          ${(w.disabled_reason && !w.enabled) ? `<span class="status-error-inline">${truncate(w.disabled_reason, 90)}</span>` : ''}
+          ${detailStr ? `<span class="status-row-detail worker-detail">${detailStr}</span>` : ''}
+        </div>`;}).join('')
+      : '<div class="status-empty">No worker status available</div>';
+
+    grid.innerHTML += buildCard('Workers', 'workers', `
+      <div class="status-rows">${workersHtml}</div>
+    `);
+
+    // ── 4. Metrics Health card
     const ms = stats.metrics_status || {};
     const cs = stats.cti_metrics_status || {};
     const metricsHealth = ms.error ? 'err' : ms.is_stale ? 'warn' : ms.last_rollup_at ? 'ok' : 'pending';
@@ -150,7 +220,7 @@ async function refreshStatus() {
       </div>
     `);
 
-    // ── 4. Recent Runs card
+    // ── 5. Recent Runs card
     const recentRuns = (runs || []).slice(0, 10);
     const runsHtml = recentRuns.length > 0
       ? recentRuns.map(r => `
@@ -166,7 +236,7 @@ async function refreshStatus() {
       <div class="status-rows">${runsHtml}</div>
     `);
 
-    // ── 5. Background Tasks card
+    // ── 6. Background Tasks card
     const recentTasks = (tasks || []).slice(0, 10);
     const tasksHtml = recentTasks.length > 0
       ? recentTasks.map(t => `
@@ -183,7 +253,7 @@ async function refreshStatus() {
       <div class="status-rows">${tasksHtml}</div>
     `);
 
-    // ── 6. CTI Overview card (if available)
+    // ── 7. CTI Overview card (if available)
     const cti = stats.cti_metrics;
     if (cti && typeof cti === 'object') {
       const summary = cti.summary || {};
@@ -222,7 +292,9 @@ async function refreshStatus() {
 function buildCard(title, icon, body) {
   const icons = {
     graph:    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><circle cx="18" cy="6" r="3"/><path d="M8.5 8l7 7M8.5 6h7"/></svg>',
+    types:    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>',
     pipeline: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
+    workers:  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 11c1.66 0 3-1.79 3-4s-1.34-4-3-4-3 1.79-3 4 1.34 4 3 4z"/><path d="M8 11c1.66 0 3-1.79 3-4S9.66 3 8 3 5 4.79 5 7s1.34 4 3 4z"/><path d="M8 13c-2.67 0-8 1.34-8 4v2h10"/><path d="M16 13c2.67 0 8 1.34 8 4v2H14"/></svg>',
     metrics:  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>',
     runs:     '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>',
     tasks:    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>',

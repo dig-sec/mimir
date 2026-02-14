@@ -54,7 +54,8 @@ async def _metrics_rollup_loop() -> None:
 async def lifespan(app: FastAPI):
     # Connector sync and LLM extraction are now handled by dedicated
     # worker processes (feedly_worker, opencti_worker, elastic_worker,
-    # llm_worker).  The API process no longer runs an inline scheduler.
+    # malware_worker, llm_worker).  The API process no longer runs an
+    # inline scheduler.
     #
     # Manual sync endpoints in routes.py still work — they just trigger
     # one-shot syncs on demand.

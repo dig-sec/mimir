@@ -134,6 +134,10 @@ class Settings:
     sync_lookback_minutes: int = int(os.getenv("SYNC_LOOKBACK_MINUTES", "60"))
 
     # ── Worker-specific settings ─────────────────────────────
+    worker_heartbeat_dir: str = os.getenv(
+        "WORKER_HEARTBEAT_DIR", "/data/worker-heartbeats"
+    )
+
     # LLM extraction worker
     llm_worker_concurrency: int = int(os.getenv("LLM_WORKER_CONCURRENCY", "3"))
     llm_worker_poll_seconds: int = int(os.getenv("LLM_WORKER_POLL_SECONDS", "2"))
@@ -164,6 +168,24 @@ class Settings:
         "ELASTIC_WORKER_EXCLUDE_INDICES", "feedly_news"
     )
 
+    # Malware worker
+    malware_worker_enabled: bool = _env_bool("MALWARE_WORKER_ENABLED", "1")
+    malware_worker_interval_minutes: int = int(
+        os.getenv(
+            "MALWARE_WORKER_INTERVAL_MINUTES",
+            os.getenv("SYNC_INTERVAL_MINUTES", "30"),
+        )
+    )
+    malware_worker_indices: str = os.getenv(
+        "MALWARE_WORKER_INDICES", "mwdb-openrelik,dailymalwarefeed"
+    )
+    malware_worker_lookback_minutes: int = int(
+        os.getenv("MALWARE_WORKER_LOOKBACK_MINUTES", "180")
+    )
+    malware_worker_max_per_index: int = int(
+        os.getenv("MALWARE_WORKER_MAX_PER_INDEX", "500")
+    )
+
     # Data ingestion limits
     max_document_size_mb: int = int(os.getenv("MAX_DOCUMENT_SIZE_MB", "100"))
     max_total_chars_per_run: int = int(
@@ -189,6 +211,14 @@ class Settings:
         return [
             idx.strip()
             for idx in self.elastic_worker_exclude_indices.split(",")
+            if idx.strip()
+        ]
+
+    @property
+    def malware_worker_indices_list(self) -> List[str]:
+        return [
+            idx.strip()
+            for idx in self.malware_worker_indices.split(",")
             if idx.strip()
         ]
 

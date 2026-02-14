@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
+import time
 from contextlib import suppress
 
 import httpx
@@ -22,6 +23,7 @@ from ..config import get_settings, validate_settings
 from ..pipeline.runner import run_sync
 from ..storage.factory import create_graph_store, create_metrics_store, create_run_store
 from ..storage.metrics_store import MetricsStore
+from .heartbeat import WorkerHeartbeat
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +167,7 @@ async def metrics_rollup_loop(metrics_store: MetricsStore) -> None:
 async def llm_worker_loop() -> None:
     """Main loop: claim runs from queue and process with LLM."""
     settings = get_settings()
+    heartbeat = WorkerHeartbeat(settings, "llm-worker")
     logging.basicConfig(level=settings.log_level)
     _shutdown.clear()
 
@@ -173,10 +176,12 @@ async def llm_worker_loop() -> None:
         validate_settings(settings)
     except ValueError as exc:
         logger.error("Configuration error: %s", exc)
+        heartbeat.update("error", {"reason": f"config error: {exc}"})
         return
 
     # Check Ollama is available before starting
     logger.info("Checking Ollama availability at %s...", settings.ollama_base_url)
+    heartbeat.update("starting", {"ollama_base_url": settings.ollama_base_url})
     try:
         is_healthy = await asyncio.wait_for(
             _check_ollama_health(
@@ -190,15 +195,33 @@ async def llm_worker_loop() -> None:
                 "Ollama at %s returned unhealthy status; unable to proceed",
                 settings.ollama_base_url,
             )
+            heartbeat.update(
+                "error",
+                {
+                    "reason": "ollama unhealthy",
+                    "ollama_base_url": settings.ollama_base_url,
+                },
+            )
             return
     except asyncio.TimeoutError:
         logger.error(
             "Ollama health check timed out at %s; unable to proceed",
             settings.ollama_base_url,
         )
+        heartbeat.update(
+            "error",
+            {"reason": "ollama health timeout", "ollama_base_url": settings.ollama_base_url},
+        )
         return
     except Exception as exc:
         logger.error("Ollama health check failed: %s; unable to proceed", exc)
+        heartbeat.update(
+            "error",
+            {
+                "reason": f"ollama health check failed: {exc}",
+                "ollama_base_url": settings.ollama_base_url,
+            },
+        )
         return
 
     logger.info("Ollama is healthy and ready")
@@ -231,6 +254,10 @@ async def llm_worker_loop() -> None:
         "LLM extraction worker started — concurrency=%d, poll_interval=%ds",
         concurrency,
         poll_interval,
+    )
+    heartbeat.update(
+        "running",
+        {"concurrency": concurrency, "poll_interval_seconds": poll_interval},
     )
 
     # Recover any stale runs from previous crashes
@@ -296,6 +323,7 @@ async def llm_worker_loop() -> None:
     # Semaphore to limit concurrent LLM extractions
     sem = asyncio.Semaphore(concurrency)
     active_tasks: set[asyncio.Task] = set()
+    last_heartbeat_at = 0.0
 
     async def _process_one(run_id: str) -> None:
         async with sem:
@@ -385,12 +413,35 @@ async def llm_worker_loop() -> None:
 
             if claimed == 0:
                 # No work available, wait before polling again
+                now = time.monotonic()
+                if now - last_heartbeat_at >= max(float(poll_interval), 2.0):
+                    is_active = len(active_tasks) > 0
+                    heartbeat.update(
+                        "running" if is_active else "sleeping",
+                        {
+                            "poll_interval_seconds": poll_interval,
+                            "active_tasks": len(active_tasks),
+                            "concurrency": concurrency,
+                        },
+                    )
+                    last_heartbeat_at = now
                 try:
                     await asyncio.wait_for(_shutdown.wait(), timeout=poll_interval)
                     break  # shutdown
                 except asyncio.TimeoutError:
                     pass
             else:
+                now = time.monotonic()
+                if now - last_heartbeat_at >= 2.0:
+                    heartbeat.update(
+                        "running",
+                        {
+                            "claimed_last_loop": claimed,
+                            "active_tasks": len(active_tasks),
+                            "concurrency": concurrency,
+                        },
+                    )
+                    last_heartbeat_at = now
                 # Give tasks a moment to start, then loop to claim more
                 await asyncio.sleep(0.1)
 
@@ -408,6 +459,7 @@ async def llm_worker_loop() -> None:
             await metrics_task
 
     logger.info("LLM extraction worker stopped")
+    heartbeat.update("stopped")
 
 
 def main() -> None:

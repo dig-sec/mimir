@@ -1704,3 +1704,50 @@ main { display: flex; flex: 1; overflow: hidden; }
   font-size: 13px;
   margin: 0;
 }
+
+/* Entity type breakdown chart */
+.etype-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.etype-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.etype-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink);
+  min-width: 110px;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.etype-bar-wrap {
+  flex: 1;
+  height: 14px;
+  background: rgba(0,0,0,0.04);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.etype-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+  min-width: 2px;
+}
+.etype-count {
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--muted);
+  min-width: 48px;
+  text-align: right;
+}
+
+/* Worker detail line */
+.worker-detail {
+  color: var(--muted);
+  font-size: 10px;
+  opacity: 0.8;
+}
