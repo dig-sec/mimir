@@ -166,6 +166,34 @@ _MITRE_NOISE_LABELS = frozenset(
 
 _MITRE_ID_RE = re.compile(r"[TtSs]\d{4}(?:\.\d{3})?|TA\d{4}")
 
+# ── CTI keyword hints for extracting typed entities from Feedly keywords ──
+_CTI_KEYWORD_HINTS: Dict[str, str] = {
+    "ransomware": "malware",
+    "phishing": "attack_pattern",
+    "apt": "threat_actor",
+    "zero-day": "vulnerability",
+    "zero day": "vulnerability",
+    "supply chain": "campaign",
+    "ddos": "attack_pattern",
+    "botnet": "malware",
+    "espionage": "campaign",
+    "wiper": "malware",
+    "infostealer": "malware",
+    "backdoor": "malware",
+    "c2": "infrastructure",
+    "command and control": "infrastructure",
+    "financial": "sector",
+    "healthcare": "sector",
+    "energy": "sector",
+    "government": "sector",
+    "critical infrastructure": "sector",
+    "defense": "sector",
+    "telecommunications": "sector",
+    "education": "sector",
+    "manufacturing": "sector",
+    "transportation": "sector",
+}
+
 # ── STIX 2.1 SRO cross-link rules: (subject_type, object_type, predicate)
 _CROSS_LINK_RULES: List[Tuple[str, str, str]] = [
     ("threat_actor", "malware", "uses"),
@@ -896,7 +924,72 @@ def _process_article(
         )
         result.relations_created += 1
 
-    # ── Keywords: skipped (created noise topic entities with 0.5 conf) ──
+    # ── Extract CTI-relevant keywords and categories ────────
+    all_tags: List[str] = []
+    for kw in entry.get("keywords", []):
+        if isinstance(kw, str) and kw.strip():
+            all_tags.append(kw.strip())
+    for cat in entry.get("categories", []):
+        label = cat.get("label", "") if isinstance(cat, dict) else str(cat)
+        label = label.strip()
+        if label:
+            all_tags.append(label)
+
+    for tag in all_tags:
+        lower_tag = tag.lower()
+        matched_type: Optional[str] = None
+        for hint, hint_type in _CTI_KEYWORD_HINTS.items():
+            if hint in lower_tag:
+                matched_type = hint_type
+                break
+        if not matched_type:
+            continue  # skip generic / non-CTI keywords
+        if _is_noise_entity(tag):
+            continue
+
+        kw_entity = resolver.resolve(tag, entity_type=matched_type)
+        kw_entity.attrs["origin"] = "feedly"
+        kw_entity.attrs["keyword_source"] = "feedly-keyword"
+        graph_store.upsert_entities([kw_entity])
+        result.entities_created += 1
+
+        entities_by_type[matched_type].append(kw_entity)
+        entity_salience[kw_entity.id] = "about"
+
+        kw_rel = Relation(
+            id=str(uuid4()),
+            subject_id=article_entity.id,
+            predicate="tagged_with",
+            object_id=kw_entity.id,
+            confidence=0.75,
+            attrs={"origin": "feedly", "keyword_source": "feedly-keyword"},
+        )
+        stored_kw = graph_store.upsert_relations([kw_rel])[0]
+        kw_snippet = f"Feedly keyword: {title[:80]} \u2192 {tag}"
+        graph_store.attach_provenance(
+            stored_kw.id,
+            Provenance(
+                provenance_id=_det_prov_id(
+                    source_uri=source_uri,
+                    relation_id=stored_kw.id,
+                    model="feedly-ai",
+                    chunk_id=stored_kw.id,
+                    start_offset=0,
+                    end_offset=0,
+                    snippet=kw_snippet,
+                ),
+                source_uri=source_uri,
+                chunk_id=stored_kw.id,
+                start_offset=0,
+                end_offset=0,
+                snippet=kw_snippet,
+                extraction_run_id=sync_run_id,
+                model="feedly-ai",
+                prompt_version="feedly-keyword-v1",
+                timestamp=published_dt,
+            ),
+        )
+        result.relations_created += 1
 
     # ── Optionally queue for LLM extraction ──────────────────
     if (

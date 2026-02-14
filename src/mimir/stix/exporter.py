@@ -16,9 +16,12 @@ from ..schemas import Subgraph, SubgraphEdge, SubgraphNode
 _ENTITY_TYPE_TO_SDO: Dict[str, str] = {
     "threat_actor": "threat-actor",
     "malware": "malware",
+    "malware_sample": "malware",  # individual sample → malware SDO
     "tool": "tool",
     "attack_pattern": "attack-pattern",
     "capa_behavior": "attack-pattern",  # CAPA/MBC behavior category
+    "capa_rule": "attack-pattern",  # Capa capability → attack-pattern
+    "yara_rule": "indicator",  # Yara detection signature
     "campaign": "campaign",
     "vulnerability": "vulnerability",
     "sector": "identity",
@@ -32,6 +35,7 @@ _ENTITY_TYPE_TO_SDO: Dict[str, str] = {
     "tactic": "attack-pattern",  # tactics map to attack-pattern in STIX
     "location": "location",
     "report": "report",
+    "topic": "note",  # generic topic → note SDO
 }
 
 # Mimir predicate → STIX relationship_type
@@ -73,9 +77,15 @@ _PREDICATE_TO_SRO: Dict[str, str] = {
     "persists_via": "uses",
     "distributed_via": "delivers",
     "implements_capability": "related-to",
+    "exhibits_capability": "related-to",
+    "exhibits": "related-to",
+    "matches": "indicates",
+    "detected_as": "indicates",
     "sighted_at": "related-to",
     "mentions": "related-to",
     "contains_ioc": "related-to",
+    "tagged_with": "related-to",
+    "co_occurs_with": "related-to",
 }
 
 # Predicates where the Mimir relation direction is reversed vs STIX
@@ -97,7 +107,8 @@ def _now_iso() -> str:
 
 def _node_to_sdo(node: SubgraphNode, created: str) -> Optional[Dict[str, Any]]:
     """Convert a Mimir subgraph node into a STIX SDO dict."""
-    sdo_type = _ENTITY_TYPE_TO_SDO.get(node.type or "", "identity")
+    entity_type = node.type or ""
+    sdo_type = _ENTITY_TYPE_TO_SDO.get(entity_type, "identity")
     stix_id = _deterministic_stix_id(sdo_type, node.id)
 
     sdo: Dict[str, Any] = {
@@ -113,7 +124,7 @@ def _node_to_sdo(node: SubgraphNode, created: str) -> Optional[Dict[str, Any]]:
     if sdo_type == "threat-actor":
         sdo["threat_actor_types"] = ["unknown"]
     elif sdo_type == "malware":
-        sdo["is_family"] = True
+        sdo["is_family"] = entity_type != "malware_sample"
         sdo["malware_types"] = ["unknown"]
     elif sdo_type == "indicator":
         sdo["pattern"] = f"[file:name = '{node.name}']"
@@ -121,6 +132,8 @@ def _node_to_sdo(node: SubgraphNode, created: str) -> Optional[Dict[str, Any]]:
         sdo["valid_from"] = created
     elif sdo_type == "identity":
         sdo["identity_class"] = "unknown"
+    elif sdo_type == "note":
+        sdo["content"] = node.name
 
     return sdo
 
