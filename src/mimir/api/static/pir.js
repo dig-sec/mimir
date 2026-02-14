@@ -237,9 +237,9 @@ export function initPIR() {
     }
 
     /* Dimensions */
-    const margin = { top: 16, right: 16, bottom: 36, left: 44 };
-    const chartWidth = Math.max(400, chartEl.clientWidth || 580);
-    const chartHeight = 200;
+    const margin = { top: 16, right: 16, bottom: 60, left: 44 };
+    const chartWidth = Math.max(700, chartEl.clientWidth || 800);
+    const chartHeight = 250;
     const w = chartWidth - margin.left - margin.right;
     const h = chartHeight - margin.top - margin.bottom;
 
@@ -284,10 +284,12 @@ export function initPIR() {
 
     /* Axes */
     let xLabels = '';
-    const tickInt = Math.max(1, Math.floor(dayKeys.length / 7));
+    const tickInt = Math.max(1, Math.floor(dayKeys.length / 5));
     for (let i = 0; i < dayKeys.length; i += tickInt) {
       const x = margin.left + i * xStep;
-      xLabels += '<text x="' + x + '" y="' + (chartHeight - 4) + '" text-anchor="middle" fill="#94a3b8" font-size="10">' + dayKeys[i].slice(5) + '</text>';
+      xLabels += '<g transform="translate(' + x + ',' + (margin.top + h + 8) + ') rotate(45)">';
+      xLabels += '<text x="0" y="0" text-anchor="start" fill="#94a3b8" font-size="11" font-family="monospace">' + dayKeys[i].slice(5) + '</text>';
+      xLabels += '</g>';
       xLabels += '<line x1="' + x + '" y1="' + margin.top + '" x2="' + x + '" y2="' + (margin.top + h) + '" stroke="#f1f5f9" stroke-width="1"/>';
     }
     let yLabels = '';

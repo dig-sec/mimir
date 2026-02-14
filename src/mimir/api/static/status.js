@@ -24,7 +24,7 @@ export function initStatus() {
 
 function startAutoRefresh() {
   stopAutoRefresh();
-  refreshTimer = setInterval(refreshStatus, 15000);
+  refreshTimer = setInterval(refreshStatus, 60000);
 }
 
 function stopAutoRefresh() {
