@@ -22,6 +22,13 @@ def _split_source_uri(source_uri: str) -> tuple[str, str]:
     return scheme.lower(), rest
 
 
+def _normalize_collection_token(value: str) -> str:
+    token = str(value or "").strip().lower()
+    if not token:
+        return ""
+    return token.replace(" ", "_").replace("-", "_")
+
+
 def infer_source(source_uri: str) -> str:
     scheme, _ = _split_source_uri(source_uri)
     return scheme or "unknown"
@@ -35,6 +42,10 @@ def parse_source_uri(source_uri: str) -> Dict[str, str]:
     if rest:
         if source in {"opencti", "elasticsearch", "malware"} and "/" in rest:
             collection, record_id = rest.split("/", 1)
+            if source == "opencti":
+                collection = _normalize_collection_token(collection)
+        elif source == "rss" and "/" in rest:
+            collection, record_id = rest.split("/", 1)
         elif source in {"upload", "stix"}:
             record_id = rest
         elif source == "file":
@@ -42,6 +53,9 @@ def parse_source_uri(source_uri: str) -> Dict[str, str]:
             record_id = rest
         elif source == "feedly":
             collection = "feedly"
+            record_id = rest
+        elif source in {"gvm", "watcher"}:
+            collection = "instance"
             record_id = rest
         else:
             record_id = rest
@@ -62,7 +76,9 @@ def build_lake_metadata(
     doc: Dict[str, Any] = dict(metadata or {})
     parsed = parse_source_uri(source_uri)
     existing_lake = doc.get("lake")
-    lake: Dict[str, Any] = dict(existing_lake) if isinstance(existing_lake, dict) else {}
+    lake: Dict[str, Any] = (
+        dict(existing_lake) if isinstance(existing_lake, dict) else {}
+    )
 
     lake["version"] = int(lake.get("version") or 1)
     lake["source_uri"] = source_uri

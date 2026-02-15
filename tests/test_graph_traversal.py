@@ -24,7 +24,6 @@ from mimir.schemas import (
 )
 from tests.in_memory_graph_store import InMemoryGraphStore
 
-
 # ── helpers ────────────────────────────────────────────────────────────────
 
 
@@ -32,7 +31,9 @@ def _build_chain_graph(n: int = 5, confidence: float = 0.9) -> InMemoryGraphStor
     """Build a linear chain: A -> B -> C -> D -> E."""
     store = InMemoryGraphStore()
     names = [chr(65 + i) for i in range(n)]  # A, B, C, ...
-    entities = [Entity(id=f"e{i}", name=name, type="test") for i, name in enumerate(names)]
+    entities = [
+        Entity(id=f"e{i}", name=name, type="test") for i, name in enumerate(names)
+    ]
     store.upsert_entities(entities)
 
     relations = []
@@ -41,7 +42,7 @@ def _build_chain_graph(n: int = 5, confidence: float = 0.9) -> InMemoryGraphStor
             Relation(
                 id=f"r{i}",
                 subject_id=f"e{i}",
-                predicate=f"connects_to",
+                predicate="connects_to",
                 object_id=f"e{i+1}",
                 confidence=confidence,
             )
@@ -60,18 +61,46 @@ def _build_diamond_graph() -> InMemoryGraphStore:
         D
     """
     store = InMemoryGraphStore()
-    store.upsert_entities([
-        Entity(id="a", name="A", type="test"),
-        Entity(id="b", name="B", type="test"),
-        Entity(id="c", name="C", type="test"),
-        Entity(id="d", name="D", type="test"),
-    ])
-    store.upsert_relations([
-        Relation(id="r_ab", subject_id="a", predicate="links", object_id="b", confidence=0.9),
-        Relation(id="r_ac", subject_id="a", predicate="links", object_id="c", confidence=0.9),
-        Relation(id="r_bd", subject_id="b", predicate="links", object_id="d", confidence=0.9),
-        Relation(id="r_cd", subject_id="c", predicate="links", object_id="d", confidence=0.9),
-    ])
+    store.upsert_entities(
+        [
+            Entity(id="a", name="A", type="test"),
+            Entity(id="b", name="B", type="test"),
+            Entity(id="c", name="C", type="test"),
+            Entity(id="d", name="D", type="test"),
+        ]
+    )
+    store.upsert_relations(
+        [
+            Relation(
+                id="r_ab",
+                subject_id="a",
+                predicate="links",
+                object_id="b",
+                confidence=0.9,
+            ),
+            Relation(
+                id="r_ac",
+                subject_id="a",
+                predicate="links",
+                object_id="c",
+                confidence=0.9,
+            ),
+            Relation(
+                id="r_bd",
+                subject_id="b",
+                predicate="links",
+                object_id="d",
+                confidence=0.9,
+            ),
+            Relation(
+                id="r_cd",
+                subject_id="c",
+                predicate="links",
+                object_id="d",
+                confidence=0.9,
+            ),
+        ]
+    )
     return store
 
 
@@ -85,25 +114,77 @@ def _build_complex_graph() -> InMemoryGraphStore:
              G
     """
     store = InMemoryGraphStore()
-    store.upsert_entities([
-        Entity(id="a", name="A", type="test"),
-        Entity(id="b", name="B", type="test"),
-        Entity(id="c", name="C", type="test"),
-        Entity(id="d", name="D", type="test"),
-        Entity(id="e", name="E", type="test"),
-        Entity(id="f", name="F", type="test"),
-        Entity(id="g", name="G", type="test"),
-    ])
-    store.upsert_relations([
-        Relation(id="r_ab", subject_id="a", predicate="links", object_id="b", confidence=0.9),
-        Relation(id="r_bc", subject_id="b", predicate="links", object_id="c", confidence=0.9),
-        Relation(id="r_ad", subject_id="a", predicate="links", object_id="d", confidence=0.9),
-        Relation(id="r_be", subject_id="b", predicate="links", object_id="e", confidence=0.9),
-        Relation(id="r_cf", subject_id="c", predicate="links", object_id="f", confidence=0.9),
-        Relation(id="r_de", subject_id="d", predicate="links", object_id="e", confidence=0.9),
-        Relation(id="r_ef", subject_id="e", predicate="links", object_id="f", confidence=0.9),
-        Relation(id="r_eg", subject_id="e", predicate="links", object_id="g", confidence=0.9),
-    ])
+    store.upsert_entities(
+        [
+            Entity(id="a", name="A", type="test"),
+            Entity(id="b", name="B", type="test"),
+            Entity(id="c", name="C", type="test"),
+            Entity(id="d", name="D", type="test"),
+            Entity(id="e", name="E", type="test"),
+            Entity(id="f", name="F", type="test"),
+            Entity(id="g", name="G", type="test"),
+        ]
+    )
+    store.upsert_relations(
+        [
+            Relation(
+                id="r_ab",
+                subject_id="a",
+                predicate="links",
+                object_id="b",
+                confidence=0.9,
+            ),
+            Relation(
+                id="r_bc",
+                subject_id="b",
+                predicate="links",
+                object_id="c",
+                confidence=0.9,
+            ),
+            Relation(
+                id="r_ad",
+                subject_id="a",
+                predicate="links",
+                object_id="d",
+                confidence=0.9,
+            ),
+            Relation(
+                id="r_be",
+                subject_id="b",
+                predicate="links",
+                object_id="e",
+                confidence=0.9,
+            ),
+            Relation(
+                id="r_cf",
+                subject_id="c",
+                predicate="links",
+                object_id="f",
+                confidence=0.9,
+            ),
+            Relation(
+                id="r_de",
+                subject_id="d",
+                predicate="links",
+                object_id="e",
+                confidence=0.9,
+            ),
+            Relation(
+                id="r_ef",
+                subject_id="e",
+                predicate="links",
+                object_id="f",
+                confidence=0.9,
+            ),
+            Relation(
+                id="r_eg",
+                subject_id="e",
+                predicate="links",
+                object_id="g",
+                confidence=0.9,
+            ),
+        ]
+    )
     return store
 
 
@@ -129,8 +210,11 @@ class TestGraphPathSchema:
             ],
             edges=[
                 SubgraphEdge(
-                    id="r1", subject_id="a", predicate="links",
-                    object_id="b", confidence=0.9,
+                    id="r1",
+                    subject_id="a",
+                    predicate="links",
+                    object_id="b",
+                    confidence=0.9,
                 ),
             ],
             length=1,
@@ -161,8 +245,20 @@ class TestGraphPathSchema:
                         SubgraphNode(id="c", name="C", type="test"),
                     ],
                     edges=[
-                        SubgraphEdge(id="r1", subject_id="a", predicate="to", object_id="b", confidence=0.8),
-                        SubgraphEdge(id="r2", subject_id="b", predicate="to", object_id="c", confidence=0.7),
+                        SubgraphEdge(
+                            id="r1",
+                            subject_id="a",
+                            predicate="to",
+                            object_id="b",
+                            confidence=0.8,
+                        ),
+                        SubgraphEdge(
+                            id="r2",
+                            subject_id="b",
+                            predicate="to",
+                            object_id="c",
+                            confidence=0.7,
+                        ),
                     ],
                     length=2,
                 ),
@@ -240,10 +336,12 @@ class TestShortestPath:
     def test_disconnected_graph(self):
         """Two disconnected components -> no path."""
         store = InMemoryGraphStore()
-        store.upsert_entities([
-            Entity(id="a", name="A", type="test"),
-            Entity(id="b", name="B", type="test"),
-        ])
+        store.upsert_entities(
+            [
+                Entity(id="a", name="A", type="test"),
+                Entity(id="b", name="B", type="test"),
+            ]
+        )
         # No relations between them
         result = store.find_shortest_path("a", "b")
         assert len(result.paths) == 0
@@ -263,15 +361,31 @@ class TestShortestPath:
     def test_confidence_filter(self):
         """Low-confidence edges are excluded."""
         store = InMemoryGraphStore()
-        store.upsert_entities([
-            Entity(id="a", name="A", type="test"),
-            Entity(id="b", name="B", type="test"),
-            Entity(id="c", name="C", type="test"),
-        ])
-        store.upsert_relations([
-            Relation(id="r1", subject_id="a", predicate="links", object_id="b", confidence=0.3),
-            Relation(id="r2", subject_id="b", predicate="links", object_id="c", confidence=0.9),
-        ])
+        store.upsert_entities(
+            [
+                Entity(id="a", name="A", type="test"),
+                Entity(id="b", name="B", type="test"),
+                Entity(id="c", name="C", type="test"),
+            ]
+        )
+        store.upsert_relations(
+            [
+                Relation(
+                    id="r1",
+                    subject_id="a",
+                    predicate="links",
+                    object_id="b",
+                    confidence=0.3,
+                ),
+                Relation(
+                    id="r2",
+                    subject_id="b",
+                    predicate="links",
+                    object_id="c",
+                    confidence=0.9,
+                ),
+            ]
+        )
         # With min_confidence=0.5, the a->b edge is excluded
         result = store.find_shortest_path("a", "c", min_confidence=0.5)
         assert len(result.paths) == 0
@@ -350,10 +464,12 @@ class TestAllPaths:
 
     def test_no_path_disconnected(self):
         store = InMemoryGraphStore()
-        store.upsert_entities([
-            Entity(id="a", name="A", type="test"),
-            Entity(id="b", name="B", type="test"),
-        ])
+        store.upsert_entities(
+            [
+                Entity(id="a", name="A", type="test"),
+                Entity(id="b", name="B", type="test"),
+            ]
+        )
         result = store.find_all_paths("a", "b")
         assert len(result.paths) == 0
 
@@ -368,7 +484,9 @@ class TestAllPaths:
         result = store.find_all_paths("a", "f", max_depth=6)
         for path in result.paths:
             node_ids = [n.id for n in path.nodes]
-            assert len(node_ids) == len(set(node_ids)), f"Repeated nodes in path: {node_ids}"
+            assert len(node_ids) == len(
+                set(node_ids)
+            ), f"Repeated nodes in path: {node_ids}"
 
 
 # ── longest path tests ──────────────────────────────────────────────────
@@ -405,10 +523,12 @@ class TestLongestPath:
 
     def test_no_path_longest(self):
         store = InMemoryGraphStore()
-        store.upsert_entities([
-            Entity(id="a", name="A", type="test"),
-            Entity(id="b", name="B", type="test"),
-        ])
+        store.upsert_entities(
+            [
+                Entity(id="a", name="A", type="test"),
+                Entity(id="b", name="B", type="test"),
+            ]
+        )
         result = store.find_longest_path("a", "b")
         assert len(result.paths) == 0
 
@@ -425,16 +545,38 @@ class TestCycleHandling:
     def test_triangle_cycle(self):
         """A cycle A-B-C-A should still find paths without infinite loop."""
         store = InMemoryGraphStore()
-        store.upsert_entities([
-            Entity(id="a", name="A", type="test"),
-            Entity(id="b", name="B", type="test"),
-            Entity(id="c", name="C", type="test"),
-        ])
-        store.upsert_relations([
-            Relation(id="r1", subject_id="a", predicate="links", object_id="b", confidence=0.9),
-            Relation(id="r2", subject_id="b", predicate="links", object_id="c", confidence=0.9),
-            Relation(id="r3", subject_id="c", predicate="links", object_id="a", confidence=0.9),
-        ])
+        store.upsert_entities(
+            [
+                Entity(id="a", name="A", type="test"),
+                Entity(id="b", name="B", type="test"),
+                Entity(id="c", name="C", type="test"),
+            ]
+        )
+        store.upsert_relations(
+            [
+                Relation(
+                    id="r1",
+                    subject_id="a",
+                    predicate="links",
+                    object_id="b",
+                    confidence=0.9,
+                ),
+                Relation(
+                    id="r2",
+                    subject_id="b",
+                    predicate="links",
+                    object_id="c",
+                    confidence=0.9,
+                ),
+                Relation(
+                    id="r3",
+                    subject_id="c",
+                    predicate="links",
+                    object_id="a",
+                    confidence=0.9,
+                ),
+            ]
+        )
         result = store.find_shortest_path("a", "c")
         assert len(result.paths) == 1
         # Shortest is 1 hop (c->a edge traversed as a->c) or 2 hops (a->b->c)
@@ -443,16 +585,38 @@ class TestCycleHandling:
     def test_cycle_all_paths(self):
         """All paths in a cycle graph are simple (no loops)."""
         store = InMemoryGraphStore()
-        store.upsert_entities([
-            Entity(id="a", name="A", type="test"),
-            Entity(id="b", name="B", type="test"),
-            Entity(id="c", name="C", type="test"),
-        ])
-        store.upsert_relations([
-            Relation(id="r1", subject_id="a", predicate="links", object_id="b", confidence=0.9),
-            Relation(id="r2", subject_id="b", predicate="links", object_id="c", confidence=0.9),
-            Relation(id="r3", subject_id="c", predicate="links", object_id="a", confidence=0.9),
-        ])
+        store.upsert_entities(
+            [
+                Entity(id="a", name="A", type="test"),
+                Entity(id="b", name="B", type="test"),
+                Entity(id="c", name="C", type="test"),
+            ]
+        )
+        store.upsert_relations(
+            [
+                Relation(
+                    id="r1",
+                    subject_id="a",
+                    predicate="links",
+                    object_id="b",
+                    confidence=0.9,
+                ),
+                Relation(
+                    id="r2",
+                    subject_id="b",
+                    predicate="links",
+                    object_id="c",
+                    confidence=0.9,
+                ),
+                Relation(
+                    id="r3",
+                    subject_id="c",
+                    predicate="links",
+                    object_id="a",
+                    confidence=0.9,
+                ),
+            ]
+        )
         result = store.find_all_paths("a", "c", max_depth=5)
         assert len(result.paths) >= 1
         for path in result.paths:
@@ -462,14 +626,30 @@ class TestCycleHandling:
     def test_self_loop(self):
         """An entity with a self-referencing relation."""
         store = InMemoryGraphStore()
-        store.upsert_entities([
-            Entity(id="a", name="A", type="test"),
-            Entity(id="b", name="B", type="test"),
-        ])
-        store.upsert_relations([
-            Relation(id="r_self", subject_id="a", predicate="self_ref", object_id="a", confidence=0.9),
-            Relation(id="r_ab", subject_id="a", predicate="links", object_id="b", confidence=0.9),
-        ])
+        store.upsert_entities(
+            [
+                Entity(id="a", name="A", type="test"),
+                Entity(id="b", name="B", type="test"),
+            ]
+        )
+        store.upsert_relations(
+            [
+                Relation(
+                    id="r_self",
+                    subject_id="a",
+                    predicate="self_ref",
+                    object_id="a",
+                    confidence=0.9,
+                ),
+                Relation(
+                    id="r_ab",
+                    subject_id="a",
+                    predicate="links",
+                    object_id="b",
+                    confidence=0.9,
+                ),
+            ]
+        )
         result = store.find_shortest_path("a", "b")
         assert len(result.paths) == 1
         assert result.paths[0].length == 1
@@ -482,26 +662,46 @@ class TestBidirectional:
     def test_forward_edge(self):
         """A->B: path from A to B uses forward edge."""
         store = InMemoryGraphStore()
-        store.upsert_entities([
-            Entity(id="a", name="A", type="test"),
-            Entity(id="b", name="B", type="test"),
-        ])
-        store.upsert_relations([
-            Relation(id="r1", subject_id="a", predicate="targets", object_id="b", confidence=0.9),
-        ])
+        store.upsert_entities(
+            [
+                Entity(id="a", name="A", type="test"),
+                Entity(id="b", name="B", type="test"),
+            ]
+        )
+        store.upsert_relations(
+            [
+                Relation(
+                    id="r1",
+                    subject_id="a",
+                    predicate="targets",
+                    object_id="b",
+                    confidence=0.9,
+                ),
+            ]
+        )
         result = store.find_shortest_path("a", "b")
         assert len(result.paths) == 1
 
     def test_backward_edge(self):
         """A->B: path from B to A uses backward traversal."""
         store = InMemoryGraphStore()
-        store.upsert_entities([
-            Entity(id="a", name="A", type="test"),
-            Entity(id="b", name="B", type="test"),
-        ])
-        store.upsert_relations([
-            Relation(id="r1", subject_id="a", predicate="targets", object_id="b", confidence=0.9),
-        ])
+        store.upsert_entities(
+            [
+                Entity(id="a", name="A", type="test"),
+                Entity(id="b", name="B", type="test"),
+            ]
+        )
+        store.upsert_relations(
+            [
+                Relation(
+                    id="r1",
+                    subject_id="a",
+                    predicate="targets",
+                    object_id="b",
+                    confidence=0.9,
+                ),
+            ]
+        )
         result = store.find_shortest_path("b", "a")
         assert len(result.paths) == 1
         assert result.paths[0].length == 1
@@ -514,15 +714,31 @@ class TestCTIScenarios:
     def test_malware_to_threat_actor_path(self):
         """Realistic CTI: find path from malware to threat actor."""
         store = InMemoryGraphStore()
-        store.upsert_entities([
-            Entity(id="m1", name="Emotet", type="malware"),
-            Entity(id="ta1", name="TA542", type="threat_actor"),
-            Entity(id="c1", name="Campaign-2024", type="campaign"),
-        ])
-        store.upsert_relations([
-            Relation(id="r1", subject_id="ta1", predicate="uses", object_id="m1", confidence=0.95),
-            Relation(id="r2", subject_id="ta1", predicate="attributed_to", object_id="c1", confidence=0.85),
-        ])
+        store.upsert_entities(
+            [
+                Entity(id="m1", name="Emotet", type="malware"),
+                Entity(id="ta1", name="TA542", type="threat_actor"),
+                Entity(id="c1", name="Campaign-2024", type="campaign"),
+            ]
+        )
+        store.upsert_relations(
+            [
+                Relation(
+                    id="r1",
+                    subject_id="ta1",
+                    predicate="uses",
+                    object_id="m1",
+                    confidence=0.95,
+                ),
+                Relation(
+                    id="r2",
+                    subject_id="ta1",
+                    predicate="attributed_to",
+                    object_id="c1",
+                    confidence=0.85,
+                ),
+            ]
+        )
         result = store.find_shortest_path("m1", "c1")
         assert len(result.paths) == 1
         assert result.paths[0].length == 2  # m1 -> ta1 -> c1
@@ -530,19 +746,47 @@ class TestCTIScenarios:
     def test_vulnerability_attack_chain(self):
         """Find path through a complex attack chain."""
         store = InMemoryGraphStore()
-        store.upsert_entities([
-            Entity(id="v1", name="CVE-2024-1234", type="vulnerability"),
-            Entity(id="e1", name="exploit-kit-1", type="tool"),
-            Entity(id="m1", name="Cobalt Strike", type="malware"),
-            Entity(id="ta1", name="APT29", type="threat_actor"),
-            Entity(id="infra1", name="C2 Server", type="infrastructure"),
-        ])
-        store.upsert_relations([
-            Relation(id="r1", subject_id="e1", predicate="exploits", object_id="v1", confidence=0.9),
-            Relation(id="r2", subject_id="e1", predicate="delivers", object_id="m1", confidence=0.85),
-            Relation(id="r3", subject_id="ta1", predicate="uses", object_id="m1", confidence=0.95),
-            Relation(id="r4", subject_id="ta1", predicate="operates", object_id="infra1", confidence=0.88),
-        ])
+        store.upsert_entities(
+            [
+                Entity(id="v1", name="CVE-2024-1234", type="vulnerability"),
+                Entity(id="e1", name="exploit-kit-1", type="tool"),
+                Entity(id="m1", name="Cobalt Strike", type="malware"),
+                Entity(id="ta1", name="APT29", type="threat_actor"),
+                Entity(id="infra1", name="C2 Server", type="infrastructure"),
+            ]
+        )
+        store.upsert_relations(
+            [
+                Relation(
+                    id="r1",
+                    subject_id="e1",
+                    predicate="exploits",
+                    object_id="v1",
+                    confidence=0.9,
+                ),
+                Relation(
+                    id="r2",
+                    subject_id="e1",
+                    predicate="delivers",
+                    object_id="m1",
+                    confidence=0.85,
+                ),
+                Relation(
+                    id="r3",
+                    subject_id="ta1",
+                    predicate="uses",
+                    object_id="m1",
+                    confidence=0.95,
+                ),
+                Relation(
+                    id="r4",
+                    subject_id="ta1",
+                    predicate="operates",
+                    object_id="infra1",
+                    confidence=0.88,
+                ),
+            ]
+        )
         # Shortest path from vulnerability to C2 server
         result = store.find_shortest_path("v1", "infra1")
         assert len(result.paths) == 1
@@ -555,16 +799,32 @@ class TestCTIScenarios:
     def test_disjoint_threat_actors(self):
         """Two unrelated threat actors have no path."""
         store = InMemoryGraphStore()
-        store.upsert_entities([
-            Entity(id="ta1", name="APT28", type="threat_actor"),
-            Entity(id="m1", name="X-Agent", type="malware"),
-            Entity(id="ta2", name="Lazarus", type="threat_actor"),
-            Entity(id="m2", name="DTrack", type="malware"),
-        ])
-        store.upsert_relations([
-            Relation(id="r1", subject_id="ta1", predicate="uses", object_id="m1", confidence=0.95),
-            Relation(id="r2", subject_id="ta2", predicate="uses", object_id="m2", confidence=0.95),
-        ])
+        store.upsert_entities(
+            [
+                Entity(id="ta1", name="APT28", type="threat_actor"),
+                Entity(id="m1", name="X-Agent", type="malware"),
+                Entity(id="ta2", name="Lazarus", type="threat_actor"),
+                Entity(id="m2", name="DTrack", type="malware"),
+            ]
+        )
+        store.upsert_relations(
+            [
+                Relation(
+                    id="r1",
+                    subject_id="ta1",
+                    predicate="uses",
+                    object_id="m1",
+                    confidence=0.95,
+                ),
+                Relation(
+                    id="r2",
+                    subject_id="ta2",
+                    predicate="uses",
+                    object_id="m2",
+                    confidence=0.95,
+                ),
+            ]
+        )
         result = store.find_shortest_path("ta1", "ta2")
         assert len(result.paths) == 0
 
@@ -587,15 +847,27 @@ class TestPathAPIRoutes:
 
         monkeypatch.setattr(factory, "create_graph_store", lambda settings: self.store)
         monkeypatch.setattr(
-            factory, "create_run_store", lambda settings: type("RS", (), {
-                "count_runs": lambda self, **kw: 0,
-                "list_recent_runs": lambda self, **kw: [],
-            })(),
+            factory,
+            "create_run_store",
+            lambda settings: type(
+                "RS",
+                (),
+                {
+                    "count_runs": lambda self, **kw: 0,
+                    "list_recent_runs": lambda self, **kw: [],
+                },
+            )(),
         )
         monkeypatch.setattr(
-            factory, "create_metrics_store", lambda settings: type("MS", (), {
-                "get_rollup_overview": lambda self, **kw: None,
-            })(),
+            factory,
+            "create_metrics_store",
+            lambda settings: type(
+                "MS",
+                (),
+                {
+                    "get_rollup_overview": lambda self, **kw: None,
+                },
+            )(),
         )
 
         sys.modules.pop("mimir.api.routes", None)
@@ -610,7 +882,9 @@ class TestPathAPIRoutes:
         self._routes = routes
 
     def test_shortest_path_by_id(self):
-        resp = self.client.get("/path/shortest", params={"source_id": "a", "target_id": "d"})
+        resp = self.client.get(
+            "/path/shortest", params={"source_id": "a", "target_id": "d"}
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["algorithm"] == "shortest"
@@ -618,7 +892,9 @@ class TestPathAPIRoutes:
         assert data["paths"][0]["length"] == 2
 
     def test_shortest_path_by_name(self):
-        resp = self.client.get("/path/shortest", params={"source_name": "A", "target_name": "D"})
+        resp = self.client.get(
+            "/path/shortest", params={"source_name": "A", "target_name": "D"}
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["paths"]) == 1
@@ -631,14 +907,18 @@ class TestPathAPIRoutes:
         assert len(data["paths"]) == 2  # Two paths in diamond
 
     def test_longest_path_by_id(self):
-        resp = self.client.get("/path/longest", params={"source_id": "a", "target_id": "d"})
+        resp = self.client.get(
+            "/path/longest", params={"source_id": "a", "target_id": "d"}
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["algorithm"] == "longest"
         assert len(data["paths"]) == 1
 
     def test_missing_source_returns_404(self):
-        resp = self.client.get("/path/shortest", params={"source_id": "missing", "target_id": "d"})
+        resp = self.client.get(
+            "/path/shortest", params={"source_id": "missing", "target_id": "d"}
+        )
         assert resp.status_code == 404
 
     def test_missing_params_returns_400(self):
@@ -646,7 +926,9 @@ class TestPathAPIRoutes:
         assert resp.status_code == 400
 
     def test_same_source_target(self):
-        resp = self.client.get("/path/shortest", params={"source_id": "a", "target_id": "a"})
+        resp = self.client.get(
+            "/path/shortest", params={"source_id": "a", "target_id": "a"}
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["paths"]) == 1
@@ -664,10 +946,12 @@ class TestPathAPIRoutes:
     def test_path_visualize_no_path(self):
         """Visualize endpoint returns 404 when no path exists."""
         store2 = InMemoryGraphStore()
-        store2.upsert_entities([
-            Entity(id="x", name="X", type="test"),
-            Entity(id="y", name="Y", type="test"),
-        ])
+        store2.upsert_entities(
+            [
+                Entity(id="x", name="X", type="test"),
+                Entity(id="y", name="Y", type="test"),
+            ]
+        )
         original = self._routes.graph_store
         self._routes.graph_store = store2
         try:

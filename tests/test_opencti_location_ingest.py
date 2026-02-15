@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from mimir.opencti.client import _INLINE, _QUERY_NAME_MAP
-from mimir.opencti.sync import OPENCTI_DEFAULT_ENTITY_TYPES, _TYPE_MAP
+from mimir.opencti.sync import _TYPE_MAP, OPENCTI_DEFAULT_ENTITY_TYPES
 from mimir.worker.opencti_worker import DEFAULT_ENTITY_TYPES
 
 

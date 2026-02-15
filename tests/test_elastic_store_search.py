@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from mimir.storage.elastic_store import ElasticGraphStore, _ElasticIndices
+from mimir.storage.elastic import ElasticGraphStore, _ElasticIndices
 
 
 class _FakeClient:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
 import json
 import sys
@@ -74,15 +75,32 @@ def _load_routes(monkeypatch, tmp_path: Path, **settings_overrides: Any):
 
     import mimir.storage.factory as factory
 
-    monkeypatch.setattr(factory, "create_graph_store", lambda settings: _DummyGraphStore())
+    monkeypatch.setattr(
+        factory, "create_graph_store", lambda settings: _DummyGraphStore()
+    )
     monkeypatch.setattr(factory, "create_run_store", lambda settings: _DummyRunStore())
     monkeypatch.setattr(
         factory, "create_metrics_store", lambda settings: _DummyMetricsStore()
     )
 
-    sys.modules.pop("mimir.api.routes", None)
+    for key in list(sys.modules):
+        if key.startswith("mimir.api.routes"):
+            sys.modules.pop(key, None)
     routes = importlib.import_module("mimir.api.routes")
-    routes.settings = replace(routes.settings, **settings_values)
+    new_settings = replace(routes.settings, **settings_values)
+    routes.settings = new_settings
+    # Propagate to sub-modules that bind settings at import time
+    import mimir.api.routes._helpers as _h
+
+    _h.settings = new_settings
+    for submod_name in list(sys.modules):
+        if (
+            submod_name.startswith("mimir.api.routes.")
+            and submod_name != "mimir.api.routes._helpers"
+        ):
+            submod = sys.modules.get(submod_name)
+            if submod and hasattr(submod, "settings"):
+                submod.settings = new_settings
     return routes
 
 
@@ -124,7 +142,9 @@ def test_worker_specs_include_connector_workers_when_configured(
     assert specs["watcher-worker"]["enabled"] is True
 
 
-def test_build_worker_status_marks_stale_and_counts_replicas(monkeypatch, tmp_path: Path):
+def test_build_worker_status_marks_stale_and_counts_replicas(
+    monkeypatch, tmp_path: Path
+):
     routes = _load_routes(
         monkeypatch,
         tmp_path,
@@ -206,14 +226,16 @@ def test_stats_payload_includes_worker_statuses(monkeypatch, tmp_path: Path):
         details={"active_tasks": 1},
     )
 
-    payload = routes.get_stats(source_uri=None)
+    payload = asyncio.run(routes.get_stats(source_uri=None))
     workers = payload["workers"]
     assert payload["entities"] == 7
     assert payload["relations"] == 11
     assert any(worker["id"] == "llm-worker" for worker in workers)
 
 
-def test_api_search_delegates_to_graph_store_and_caps_results(monkeypatch, tmp_path: Path):
+def test_api_search_delegates_to_graph_store_and_caps_results(
+    monkeypatch, tmp_path: Path
+):
     routes = _load_routes(monkeypatch, tmp_path)
 
     calls: list[tuple[str, str | None]] = []
@@ -222,11 +244,16 @@ def test_api_search_delegates_to_graph_store_and_caps_results(monkeypatch, tmp_p
         def search_entities(self, query: str, entity_type: str | None = None):
             calls.append((query, entity_type))
             return [
-                SimpleNamespace(id=f"e-{i}", name=f"Name {i}", type=entity_type or "unknown")
+                SimpleNamespace(
+                    id=f"e-{i}", name=f"Name {i}", type=entity_type or "unknown"
+                )
                 for i in range(60)
             ]
 
-    routes.graph_store = _SearchGraphStore()
+    # Patch at the sub-module level so the function sees the new store
+    import mimir.api.routes.search as _search_mod
+
+    _search_mod.graph_store = _SearchGraphStore()
     result = routes.search_entities(q="dyno", entity_type="malware")
 
     assert calls == [("dyno", "malware")]

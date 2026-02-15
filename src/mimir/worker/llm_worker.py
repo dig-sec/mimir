@@ -32,7 +32,7 @@ _shutdown = asyncio.Event()
 
 async def _check_ollama_health(base_url: str, timeout: float) -> bool:
     """Check if Ollama is available and responding.
-    
+
     Returns True if healthy, False if unreachable.
     """
     try:
@@ -128,9 +128,7 @@ async def metrics_rollup_loop(metrics_store: MetricsStore) -> None:
         # Log summary of completed rollups
         if threat_actor_summary or pir_summary or cti_summary:
             logger.info(
-                (
-                    "Metrics rollup complete:%s%s%s"
-                ),
+                ("Metrics rollup complete:%s%s%s"),
                 (
                     f" threat_actor={int(threat_actor_summary.get('docs_written', 0))} docs/"
                     f"{int(threat_actor_summary.get('buckets_written', 0))} buckets/"
@@ -210,7 +208,10 @@ async def llm_worker_loop() -> None:
         )
         heartbeat.update(
             "error",
-            {"reason": "ollama health timeout", "ollama_base_url": settings.ollama_base_url},
+            {
+                "reason": "ollama health timeout",
+                "ollama_base_url": settings.ollama_base_url,
+            },
         )
         return
     except Exception as exc:

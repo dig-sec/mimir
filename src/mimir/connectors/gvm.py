@@ -27,25 +27,23 @@ Design goals
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterator, List, Optional, Tuple
-from uuid import UUID, uuid4, uuid5
+from uuid import uuid4
 
 from ..config import Settings
 from ..dedupe import EntityResolver
-from ..normalize import canonical_entity_key
 from ..schemas import Entity, Provenance, Relation
 from ..storage.base import GraphStore
+from ..utils.provenance import NS_PROVENANCE_GVM, det_prov_id
 
 logger = logging.getLogger(__name__)
 
-# Namespace UUID for deterministic provenance IDs
-_NS_PROVENANCE = UUID("b7a1e3c5-d9f2-4a6b-8e0c-1f3d5b7a9c2e")
+_NS_PROVENANCE = NS_PROVENANCE_GVM
 
 # Regex patterns
 _CVE_RE = re.compile(r"CVE-\d{4}-\d{4,}", re.IGNORECASE)
@@ -89,12 +87,16 @@ def _det_prov_id(
     snippet: str,
 ) -> str:
     """Deterministic provenance ID keyed by evidence granularity."""
-    snippet_hash = hashlib.sha1(snippet.encode("utf-8")).hexdigest()
-    material = (
-        f"{source_uri}|{relation_id}|{model}|{chunk_id}|"
-        f"{start_offset}|{end_offset}|{snippet_hash}"
+    return det_prov_id(
+        namespace=_NS_PROVENANCE,
+        source_uri=source_uri,
+        relation_id=relation_id,
+        model=model,
+        chunk_id=chunk_id,
+        start_offset=start_offset,
+        end_offset=end_offset,
+        snippet=snippet,
     )
-    return str(uuid5(_NS_PROVENANCE, material))
 
 
 def _severity_label(cvss: float) -> str:
@@ -191,8 +193,7 @@ def _create_gmp_connection(settings: Settings):
         return TLSConnection(**kwargs)
     else:
         raise ValueError(
-            f"Unsupported GVM_CONNECTION_TYPE: {conn_type!r}. "
-            "Use 'unix' or 'tls'."
+            f"Unsupported GVM_CONNECTION_TYPE: {conn_type!r}. " "Use 'unix' or 'tls'."
         )
 
 

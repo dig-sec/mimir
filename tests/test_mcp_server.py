@@ -85,7 +85,9 @@ def _load_mcp_server(monkeypatch):
 def test_mcp_search_entities_delegates_to_graph_store(monkeypatch):
     mcp_server, graph = _load_mcp_server(monkeypatch)
 
-    payload = json.loads(mcp_server.search_entities("dyno-wiper", entity_type="malware"))
+    payload = json.loads(
+        mcp_server.search_entities("dyno-wiper", entity_type="malware")
+    )
 
     assert graph.search_calls == [("dyno-wiper", "malware")]
     assert payload

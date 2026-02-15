@@ -7,13 +7,10 @@ LLM extraction. This connector does not require API credentials or paid licenses
 from __future__ import annotations
 
 import hashlib
-import html
 import logging
-import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from email.utils import parsedate_to_datetime
 from typing import Callable, Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -22,11 +19,10 @@ import httpx
 from ..config import Settings
 from ..schemas import ExtractionRun
 from ..storage.run_store import RunStore
+from ..utils.datetime import parse_rfc2822_or_iso as _parse_datetime
+from ..utils.text import normalize_text as _normalize_text
 
 logger = logging.getLogger(__name__)
-
-_TAG_RE = re.compile(r"<[^>]+>")
-_WS_RE = re.compile(r"\s+")
 
 
 @dataclass
@@ -76,40 +72,6 @@ def _extract_link(node: ET.Element) -> str:
         if rel in {"", "alternate"}:
             return href
     return first_href
-
-
-def _normalize_text(value: str) -> str:
-    if not value:
-        return ""
-    out = html.unescape(value)
-    if "<" in out and ">" in out:
-        out = _TAG_RE.sub(" ", out)
-    out = _WS_RE.sub(" ", out).strip()
-    return out
-
-
-def _parse_datetime(value: str) -> Optional[datetime]:
-    text = str(value or "").strip()
-    if not text:
-        return None
-
-    try:
-        parsed = parsedate_to_datetime(text)
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
-    except (TypeError, ValueError, IndexError):
-        pass
-
-    try:
-        if text.endswith("Z"):
-            text = text[:-1] + "+00:00"
-        parsed = datetime.fromisoformat(text)
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
-    except ValueError:
-        return None
 
 
 def _feed_slug(feed_url: str) -> str:
@@ -246,7 +208,9 @@ def pull_from_rss_feeds(
 
             result.feeds_scanned += 1
             queued_for_feed = 0
-            for entry in entries[: max_items_per_feed if max_items_per_feed > 0 else None]:
+            for entry in entries[
+                : max_items_per_feed if max_items_per_feed > 0 else None
+            ]:
                 result.items_seen += 1
                 title = str(entry.get("title") or "").strip()
                 link = str(entry.get("link") or "").strip()
@@ -255,7 +219,11 @@ def pull_from_rss_feeds(
                 summary = str(entry.get("summary") or "").strip()
 
                 published_dt = _parse_datetime(published_raw)
-                if published_dt is not None and lookback_hours > 0 and published_dt < since:
+                if (
+                    published_dt is not None
+                    and lookback_hours > 0
+                    and published_dt < since
+                ):
                     result.skipped_old += 1
                     continue
 

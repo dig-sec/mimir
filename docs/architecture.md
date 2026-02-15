@@ -74,7 +74,7 @@ Elasticsearch-backed graph with full provenance tracking.
 
 ## Process Architecture
 
-Mimir runs as **nine independent processes**, all built from the same
+Mimir runs as **ten independent processes**, all built from the same
 Docker image with different `command` overrides:
 
 | Service | Module | Purpose |
@@ -87,6 +87,7 @@ Docker image with different `command` overrides:
 | **gvm-worker** | `mimir.worker.gvm_worker` | Periodic GVM/OpenVAS vulnerability scan sync |
 | **watcher-worker** | `mimir.worker.watcher_worker` | Periodic Watcher threat-intelligence sync |
 | **elastic-worker** | `mimir.worker.elastic_worker` | Periodic document pull from ES source indices |
+| **malware-worker** | `mimir.worker.malware_worker` | Periodic malware-feed sync from ES indices (structured import) |
 | **backfill** | `mimir.backfill` | One-shot historical data backfill (on-demand) |
 
 ### Why separate processes?
@@ -126,7 +127,6 @@ src/mimir/
 ├── api/                   # FastAPI application
 │   ├── app.py             # App factory + lifespan
 │   ├── routes.py          # All REST + HTML endpoints
-│   ├── scheduler.py       # (Legacy) inline sync scheduler — no longer used
 │   ├── tasks.py           # In-memory background task manager
 │   ├── ui.py              # Jinja2 HTML template rendering
 │   ├── visualize.py       # Graph visualization helpers
@@ -141,7 +141,12 @@ src/mimir/
 │       └── style.css      # Stylesheet
 │
 ├── connectors/
-│   └── __init__.py        # Feedly connector — Feedly-AI entity extraction
+│   ├── __init__.py        # Feedly connector — Feedly-AI extraction (+ optional queue)
+│   ├── rss.py             # Public RSS/Atom connector (queue for LLM)
+│   ├── gvm.py             # GVM/OpenVAS structured connector
+│   ├── watcher.py         # Watcher structured connector
+│   ├── malware.py         # Malware feed structured connector
+│   └── aikg.py            # AIKG JSON structured triple import
 │
 ├── elastic_source/
 │   ├── client.py          # ElasticsearchSourceClient (search_after pagination)
@@ -173,8 +178,7 @@ src/mimir/
 │   ├── run_store.py       # Abstract RunStore interface (work queue)
 │   ├── metrics_store.py   # Abstract MetricsStore interface
 │   ├── elastic_store.py   # Elasticsearch implementations of all stores
-│   ├── factory.py         # Store factory (settings → concrete store)
-│   └── sqlite_store.py    # SQLite store (development / testing)
+│   └── factory.py         # Store factory (settings → concrete store)
 │
 └── worker/
     ├── main.py            # Legacy entrypoint — delegates to llm_worker
@@ -185,7 +189,8 @@ src/mimir/
     ├── rss_worker.py      # Public RSS/Atom feed worker (periodic sync)
     ├── gvm_worker.py      # GVM/OpenVAS worker (periodic vulnerability sync)
     ├── watcher_worker.py  # Watcher worker (periodic threat-intel sync)
-    └── elastic_worker.py  # Elasticsearch source worker (periodic sync)
+    ├── elastic_worker.py  # Elasticsearch source worker (periodic sync)
+    └── malware_worker.py  # Malware feed worker (periodic structured sync)
 ```
 
 ---
@@ -223,6 +228,22 @@ Elasticsearch (configurable source indices)
     → Extracts text from documents (configurable field mapping)
     → Normalizes text (strip HTML, whitespace)
     → Queues for LLM extraction via RunStore.create_run()
+```
+
+#### RSS Worker (`rss_worker.py`)
+```
+Public RSS/Atom feeds
+  → RSS connector (connectors/rss.py)
+    → Parses feed entries + normalizes text
+    → Queues unseen feed items for LLM extraction
+```
+
+#### GVM / Watcher / Malware Workers (structured-first)
+```
+GVM, Watcher, Malware feed sources
+  → Structured connectors (connectors/gvm.py, watcher.py, malware.py)
+    → Upsert entities + relations + provenance directly
+    → No RunStore queue entry unless separately ingested as documents
 ```
 
 ### 2. LLM Extraction (LLM Worker)
@@ -265,11 +286,15 @@ All persistence is in **Elasticsearch** with indices prefixed by
 | `{prefix}-entities` | Entity documents (name, type, aliases, attrs) |
 | `{prefix}-relations` | Relation documents (subject, predicate, object, confidence) |
 | `{prefix}-provenance` | Provenance records linking relations to source text snippets |
-| `{prefix}-runs` | Extraction run queue (status: pending/running/completed/failed) |
+| `{prefix}-relation-provenance` | Mapping index between relations and provenance IDs |
+| `{prefix}-runs` | Extraction run queue (status: pending/running/completed/failed/skipped) |
 | `{prefix}-documents` | Raw source documents + normalized `metadata.lake` envelope |
 | `{prefix}-chunks` | Text chunks for completed extraction runs |
-| `{prefix}-metrics-*` | Rollup metrics (threat actor daily stats) |
+| `{prefix}-metrics` | Rollup metrics (threat actor / PIR / CTI daily stats) |
 | `{prefix}-backfill-checkpoints` | Backfill progress checkpoints |
+
+Detailed data-lake taxonomy and worker-input alignment:
+`docs/datalake-indexes-taxonomy.md`
 
 ### RunStore as Work Queue
 
@@ -279,7 +304,7 @@ LLM worker, using Elasticsearch's optimistic concurrency control:
 ```
 create_run()        → Connector creates a run with status "pending"
 claim_next_run()    → LLM worker atomically sets status to "running"
-update_run_status() → Worker sets "completed" or "failed"
+update_run_status() → Worker sets "completed", "failed", or "skipped"
 recover_stale_runs()→ On startup, resets "running" → "pending" (crash recovery)
 ```
 
@@ -384,7 +409,7 @@ The extraction pipeline in `pipeline/runner.py`:
 | DELETE | `/api/runs` | Delete all runs |
 | POST | `/api/recover-stale-runs` | Reset stale runs |
 | GET | `/api/stats` | Graph statistics |
-| GET | `/api/lake/overview` | Elasticsearch-only source/collection lake overview |
+| GET | `/api/lake/overview` | Lake source/collection overview (documents + provenance coverage) |
 | GET | `/api/data-quality` | Data quality metrics |
 | GET | `/api/tasks` | Background task list |
 | POST | `/api/metrics/rollup` | Trigger metrics rollup |
@@ -512,6 +537,15 @@ All configuration is via environment variables, read at startup by the
 | `ELASTIC_CONNECTOR_TEXT_FIELDS` | `content,text,summary,...` | Fields to extract text from |
 | `ELASTIC_CONNECTOR_MIN_TEXT_CHARS` | `50` | Minimum text length to process |
 
+### Malware Worker
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MALWARE_WORKER_ENABLED` | `1` | Enable malware feed worker |
+| `MALWARE_WORKER_INTERVAL_MINUTES` | `30` | Sync interval |
+| `MALWARE_WORKER_INDICES` | `mwdb-openrelik,dailymalwarefeed-*` | Comma-separated malware source indices |
+| `MALWARE_WORKER_LOOKBACK_MINUTES` | `180` | Time overlap between cycles |
+| `MALWARE_WORKER_MAX_PER_INDEX` | `500` | Max docs processed per index per cycle |
+
 ### General Sync
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -553,6 +587,7 @@ docker compose logs -f feedly-worker
 docker compose logs -f rss-worker
 docker compose logs -f gvm-worker
 docker compose logs -f watcher-worker
+docker compose logs -f malware-worker
 ```
 
 ### Local Development
@@ -572,6 +607,7 @@ python -m mimir.worker.rss_worker
 python -m mimir.worker.gvm_worker
 python -m mimir.worker.watcher_worker
 python -m mimir.worker.elastic_worker
+python -m mimir.worker.malware_worker
 ```
 
 ### Scaling Considerations

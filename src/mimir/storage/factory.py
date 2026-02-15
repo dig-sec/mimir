@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .base import GraphStore
-from .elastic_store import ElasticGraphStore, ElasticMetricsStore, ElasticRunStore
+from .elastic import ElasticGraphStore, ElasticMetricsStore, ElasticRunStore
 from .metrics_store import MetricsStore
 from .run_store import RunStore
 

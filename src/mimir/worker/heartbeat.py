@@ -55,4 +55,6 @@ class WorkerHeartbeat:
                 json.dump(payload, fh, ensure_ascii=True, sort_keys=True)
             tmp_path.replace(self.path)
         except Exception:
-            logger.debug("Failed to write heartbeat for %s", self.worker_id, exc_info=True)
+            logger.debug(
+                "Failed to write heartbeat for %s", self.worker_id, exc_info=True
+            )

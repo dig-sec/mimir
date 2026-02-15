@@ -128,12 +128,8 @@ class GraphStore(ABC):
         source_entity = self.get_entity(source_id)
         target_entity = self.get_entity(target_id)
         if not source_entity or not target_entity:
-            src_node = SubgraphNode(
-                id=source_id, name=source_id, type=None
-            )
-            tgt_node = SubgraphNode(
-                id=target_id, name=target_id, type=None
-            )
+            src_node = SubgraphNode(id=source_id, name=source_id, type=None)
+            tgt_node = SubgraphNode(id=target_id, name=target_id, type=None)
             return PathResult(
                 source=src_node, target=tgt_node, paths=[], algorithm="shortest"
             )
@@ -243,9 +239,9 @@ class GraphStore(ABC):
 
         # Iterative DFS with explicit stack
         # Stack items: (current_node, path_nodes, path_edges, visited_set)
-        stack: list[
-            Tuple[str, list[SubgraphNode], list[SubgraphEdge], Set[str]]
-        ] = [(source_id, [node_map[source_id]], [], {source_id})]
+        stack: list[Tuple[str, list[SubgraphNode], list[SubgraphEdge], Set[str]]] = [
+            (source_id, [node_map[source_id]], [], {source_id})
+        ]
 
         while stack and len(paths) < max_paths:
             current, p_nodes, p_edges, p_visited = stack.pop()
@@ -264,12 +260,14 @@ class GraphStore(ABC):
                 if neighbor_id in p_visited:
                     continue
                 new_visited = p_visited | {neighbor_id}
-                stack.append((
-                    neighbor_id,
-                    p_nodes + [node_map[neighbor_id]],
-                    p_edges + [edge],
-                    new_visited,
-                ))
+                stack.append(
+                    (
+                        neighbor_id,
+                        p_nodes + [node_map[neighbor_id]],
+                        p_edges + [edge],
+                        new_visited,
+                    )
+                )
 
         paths.sort(key=lambda p: p.length)
         return PathResult(

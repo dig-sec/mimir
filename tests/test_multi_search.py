@@ -4,8 +4,6 @@ Tests the frontend logic for managing multiple concurrent searches and merging r
 """
 
 import unittest
-from unittest.mock import Mock, MagicMock, patch, call
-from datetime import datetime
 
 
 class TestMultiSearch(unittest.TestCase):
@@ -14,7 +12,7 @@ class TestMultiSearch(unittest.TestCase):
     def test_search_storage_map_creation(self):
         """Test that searches are stored in a Map-like structure."""
         searches = {}
-        
+
         # Add search
         search_id = "search_0"
         searches[search_id] = {
@@ -26,7 +24,7 @@ class TestMultiSearch(unittest.TestCase):
             "subgraph": None,
             "active": True,
         }
-        
+
         self.assertIn(search_id, searches)
         self.assertEqual(searches[search_id]["label"], "Sweden (Location)")
         self.assertEqual(searches[search_id]["depth"], 2)
@@ -36,7 +34,7 @@ class TestMultiSearch(unittest.TestCase):
         """Test adding current search to multi-search list."""
         searches = {}
         search_counter = [0]
-        
+
         def add_search(label, seed, seed_id, depth, min_conf):
             search_id = f"search_{search_counter[0]}"
             search_counter[0] += 1
@@ -50,12 +48,12 @@ class TestMultiSearch(unittest.TestCase):
                 "active": True,
             }
             return search_id
-        
+
         # Add searches
         id1 = add_search("Sweden", "Sweden", "entity_1", 2, 0.7)
         id2 = add_search("Logistics", "Logistics", "entity_2", 3, 0.8)
         id3 = add_search("Cyber Attack", "Cyber Attack", "entity_3", 1, 0.75)
-        
+
         self.assertEqual(len(searches), 3)
         self.assertEqual(searches[id1]["label"], "Sweden")
         self.assertEqual(searches[id2]["depth"], 3)
@@ -74,11 +72,11 @@ class TestMultiSearch(unittest.TestCase):
                 "active": True,
             }
         }
-        
+
         # Toggle off
         searches["search_0"]["active"] = False
         self.assertFalse(searches["search_0"]["active"])
-        
+
         # Toggle on
         searches["search_0"]["active"] = True
         self.assertTrue(searches["search_0"]["active"])
@@ -90,7 +88,7 @@ class TestMultiSearch(unittest.TestCase):
             "search_1": {"label": "Logistics", "active": True},
             "search_2": {"label": "Cyber Attack", "active": True},
         }
-        
+
         self.assertEqual(len(searches), 3)
         del searches["search_1"]
         self.assertEqual(len(searches), 2)
@@ -112,7 +110,7 @@ class TestMultiSearch(unittest.TestCase):
                 }
             ],
         }
-        
+
         search_2_result = {
             "nodes": [
                 {"id": "entity_3", "name": "Logistics Inc", "type": "organization"},
@@ -127,16 +125,16 @@ class TestMultiSearch(unittest.TestCase):
                 }
             ],
         }
-        
+
         # Merge logic: collect all unique nodes and edges
         merged_nodes = {}
         merged_edges = []
-        
+
         for search_result in [search_1_result, search_2_result]:
             for node in search_result["nodes"]:
                 merged_nodes[node["id"]] = node
             merged_edges.extend(search_result["edges"])
-        
+
         self.assertEqual(len(merged_nodes), 4)
         self.assertEqual(len(merged_edges), 2)
         self.assertIn("entity_1", merged_nodes)
@@ -150,19 +148,19 @@ class TestMultiSearch(unittest.TestCase):
             ],
             "edges": [],
         }
-        
+
         search_2_result = {
             "nodes": [
                 {"id": "entity_1", "name": "Sweden", "type": "location"},
             ],
             "edges": [],
         }
-        
+
         merged_nodes = {}
         for search_result in [search_1_result, search_2_result]:
             for node in search_result["nodes"]:
                 merged_nodes[node["id"]] = node
-        
+
         # Should have only 1 node despite adding it twice
         self.assertEqual(len(merged_nodes), 1)
 
@@ -194,14 +192,14 @@ class TestMultiSearch(unittest.TestCase):
                 },
             },
         }
-        
+
         # Merge only active
         merged_nodes = {}
         for search_id, search in searches.items():
             if search["active"] and search["subgraph"]:
                 for node in search["subgraph"]["nodes"]:
                     merged_nodes[node["id"]] = node
-        
+
         # Should have 2 nodes (from search_0 and search_2)
         self.assertEqual(len(merged_nodes), 2)
         self.assertIn("entity_1", merged_nodes)
@@ -227,11 +225,11 @@ class TestMultiSearch(unittest.TestCase):
                 ],
             }
         ]
-        
+
         merged_edges = []
         for search_result in search_results:
             merged_edges.extend(search_result["edges"])
-        
+
         self.assertEqual(len(merged_edges), 1)
         edge = merged_edges[0]
         self.assertEqual(edge["type"], "uses")
@@ -244,17 +242,17 @@ class TestMultiSearch(unittest.TestCase):
             "nodes": [{"id": "entity_1", "name": "Sweden"}],
             "edges": [],
         }
-        
+
         search_empty = {"nodes": [], "edges": []}
-        
+
         merged_nodes = {}
         merged_edges = []
-        
+
         for result in [search_with_results, search_empty]:
             for node in result["nodes"]:
                 merged_nodes[node["id"]] = node
             merged_edges.extend(result["edges"])
-        
+
         self.assertEqual(len(merged_nodes), 1)
         self.assertEqual(len(merged_edges), 0)
 
@@ -262,7 +260,7 @@ class TestMultiSearch(unittest.TestCase):
         """Test merging searches with different depth configurations."""
         searches = {}
         search_counter = [0]
-        
+
         def create_search(label, depth):
             search_id = f"search_{search_counter[0]}"
             search_counter[0] += 1
@@ -272,11 +270,11 @@ class TestMultiSearch(unittest.TestCase):
                 "active": True,
             }
             return search_id
-        
-        id1 = create_search("Shallow Sweden", 1)
-        id2 = create_search("Medium Malware", 2)
-        id3 = create_search("Deep Campaign", 3)
-        
+
+        create_search("Shallow Sweden", 1)
+        create_search("Medium Malware", 2)
+        create_search("Deep Campaign", 3)
+
         depths = [searches[sid]["depth"] for sid in searches]
         self.assertEqual(sorted(depths), [1, 2, 3])
 
@@ -296,7 +294,7 @@ class TestMultiSearch(unittest.TestCase):
                 "seedId": "entity_2",
             },
         }
-        
+
         html_cards = []
         for search_id, search in searches.items():
             card_html = f"""
@@ -306,15 +304,15 @@ class TestMultiSearch(unittest.TestCase):
                     <span class="search-depth">depth={search['depth']}</span>
                 </div>
                 <div class="search-card-controls">
-                    <input type="checkbox" class="search-toggle" 
-                           data-search-id="{search_id}" 
+                    <input type="checkbox" class="search-toggle"
+                           data-search-id="{search_id}"
                            {'checked' if search['active'] else ''}>
                     <button class="search-remove" data-search-id="{search_id}">×</button>
                 </div>
             </div>
             """
             html_cards.append(card_html)
-        
+
         self.assertEqual(len(html_cards), 2)
         self.assertIn("Sweden", html_cards[0])
         self.assertIn("Logistics", html_cards[1])
@@ -333,12 +331,10 @@ class TestMultiSearch(unittest.TestCase):
                 "active": True,
             }
         }
-        
+
         original = searches["search_0"].copy()
-        
+
         # Simulate merge operation (no modification of search metadata)
-        merged_graph = {"nodes": [], "edges": []}
-        
         # Verify metadata unchanged
         self.assertEqual(searches["search_0"]["label"], original["label"])
         self.assertEqual(searches["search_0"]["seedId"], original["seedId"])
@@ -348,7 +344,7 @@ class TestMultiSearch(unittest.TestCase):
         """Test that reasonable limit of concurrent searches is respected."""
         searches = {}
         max_searches = 5
-        
+
         for i in range(max_searches + 2):
             search_id = f"search_{i}"
             if len(searches) < max_searches:
@@ -356,7 +352,7 @@ class TestMultiSearch(unittest.TestCase):
             else:
                 # Would be rejected
                 pass
-        
+
         self.assertEqual(len(searches), max_searches)
 
     def test_search_visibility_toggle(self):
@@ -366,10 +362,10 @@ class TestMultiSearch(unittest.TestCase):
             "search_1": False,
             "search_2": True,
         }
-        
+
         # Filter to visible (active) searches
         visible = [sid for sid, active in search_active_states.items() if active]
-        
+
         self.assertEqual(len(visible), 2)
         self.assertIn("search_0", visible)
         self.assertNotIn("search_1", visible)
@@ -393,14 +389,11 @@ class TestMultiSearch(unittest.TestCase):
                 }
             ],
         }
-        
+
         # Verify cross-search edges preserved
         self.assertTrue(
-            any(
-                len(edge.get("search_ids", [])) > 1 for edge in merged_result["edges"]
-            )
+            any(len(edge.get("search_ids", [])) > 1 for edge in merged_result["edges"])
         )
-
 
 
 if __name__ == "__main__":

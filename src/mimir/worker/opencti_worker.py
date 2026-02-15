@@ -1,8 +1,7 @@
 """OpenCTI connector worker.
 
 Standalone worker process that periodically syncs entities, relations,
-and reports from OpenCTI into the Mimir graph.  Replaces the
-inline OpenCTI sync that previously ran inside the API scheduler.
+and reports from OpenCTI into the Mimir graph.
 
 The worker:
 * Runs on its own schedule (``OPENCTI_WORKER_INTERVAL_MINUTES``, default 30)
@@ -15,170 +14,81 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import signal
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import datetime
 
-from ..config import get_settings
+from ..config import Settings
 from ..opencti.client import OpenCTIClient
 from ..opencti.sync import OPENCTI_DEFAULT_ENTITY_TYPES, pull_from_opencti
 from ..storage.factory import create_graph_store, create_run_store
-from .heartbeat import WorkerHeartbeat
+from ._base import CycleSummary, PreflightResult, WorkerHeartbeat, run_connector_loop
 
 logger = logging.getLogger(__name__)
-
-_shutdown = asyncio.Event()
 
 DEFAULT_ENTITY_TYPES = list(OPENCTI_DEFAULT_ENTITY_TYPES)
 
 
-def _handle_signal() -> None:
-    logger.info("OpenCTI worker: shutdown signal received")
-    _shutdown.set()
+def _preflight(settings: Settings) -> PreflightResult:
+    if not settings.opencti_url or not settings.opencti_token:
+        return PreflightResult(ok=False, reason="OPENCTI_URL / OPENCTI_TOKEN not set")
+    interval = settings.opencti_worker_interval_minutes
+    if interval <= 0:
+        return PreflightResult(
+            ok=False, reason=f"OPENCTI_WORKER_INTERVAL_MINUTES={interval}"
+        )
+    return PreflightResult(
+        ok=True,
+        interval_seconds=interval * 60,
+        extra_heartbeat={"opencti_url": settings.opencti_url},
+    )
 
 
-def _install_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
-    """Install shutdown handlers with a portable fallback."""
-    for sig in (signal.SIGINT, signal.SIGTERM):
+def _run_cycle(
+    settings: Settings,
+    since: datetime,
+    until: datetime,
+    heartbeat: WorkerHeartbeat,
+) -> CycleSummary:
+    graph_store = create_graph_store(settings)
+    run_store = create_run_store(settings)
+    client = OpenCTIClient(settings.opencti_url, settings.opencti_token)
+    try:
+
+        def _progress(msg: str) -> None:
+            heartbeat.update("running", {"progress": msg[:200]})
+
+        result = pull_from_opencti(
+            client,
+            graph_store,
+            entity_types=DEFAULT_ENTITY_TYPES,
+            max_per_type=0,
+            run_store=run_store,
+            settings=settings,
+            progress_cb=_progress,
+        )
+        return CycleSummary(
+            log_message=(
+                f"{result.entities_pulled} entities, "
+                f"{result.relations_pulled} relations"
+            ),
+            heartbeat_details={
+                "entities_pulled": result.entities_pulled,
+                "relations_pulled": result.relations_pulled,
+            },
+        )
+    finally:
         try:
-            loop.add_signal_handler(sig, _handle_signal)
-        except (NotImplementedError, RuntimeError, ValueError):
-            try:
-                signal.signal(sig, lambda *_: _handle_signal())
-            except (ValueError, OSError):
-                logger.warning(
-                    "OpenCTI worker: unable to install signal handler for %s",
-                    sig.name,
-                )
+            client.close()
+        except Exception:
+            pass
 
 
 async def opencti_worker_loop() -> None:
     """Periodically sync entities and relations from OpenCTI."""
-    settings = get_settings()
-    heartbeat = WorkerHeartbeat(settings, "opencti-worker")
-    logging.basicConfig(level=settings.log_level)
-    _shutdown.clear()
-
-    if not settings.opencti_url or not settings.opencti_token:
-        logger.info(
-            "OpenCTI worker: disabled (OPENCTI_URL / OPENCTI_TOKEN not set). Exiting."
-        )
-        heartbeat.update(
-            "disabled", {"reason": "OPENCTI_URL / OPENCTI_TOKEN not set"}
-        )
-        return
-
-    interval_minutes = settings.opencti_worker_interval_minutes
-    interval = interval_minutes * 60
-    if interval <= 0:
-        logger.info(
-            "OpenCTI worker: disabled (OPENCTI_WORKER_INTERVAL_MINUTES=%d). Exiting.",
-            interval_minutes,
-        )
-        heartbeat.update(
-            "disabled",
-            {
-                "reason": "OPENCTI_WORKER_INTERVAL_MINUTES<=0",
-                "interval_minutes": interval_minutes,
-            },
-        )
-        return
-
-    graph_store = create_graph_store(settings)
-    run_store = create_run_store(settings)
-
-    loop = asyncio.get_running_loop()
-    _install_signal_handlers(loop)
-
-    logger.info(
-        "OpenCTI worker started — interval=%dm, url=%s",
-        interval_minutes,
-        settings.opencti_url,
+    await run_connector_loop(
+        worker_name="opencti-worker",
+        preflight=_preflight,
+        run_cycle=_run_cycle,
     )
-    heartbeat.update(
-        "running",
-        {
-            "interval_minutes": interval_minutes,
-            "opencti_url": settings.opencti_url,
-        },
-    )
-
-    while not _shutdown.is_set():
-        cycle_started_at = datetime.now(timezone.utc).isoformat()
-        cycle_error: Optional[str] = None
-        heartbeat.update("running", {"cycle_started_at": cycle_started_at})
-        client = None
-        try:
-            client = OpenCTIClient(settings.opencti_url, settings.opencti_token)
-
-            def _progress(msg: str) -> None:
-                heartbeat.update(
-                    "running",
-                    {"cycle_started_at": cycle_started_at, "progress": msg[:200]},
-                )
-
-            result = await asyncio.to_thread(
-                pull_from_opencti,
-                client,
-                graph_store,
-                entity_types=DEFAULT_ENTITY_TYPES,
-                max_per_type=0,
-                run_store=run_store,
-                settings=settings,
-                progress_cb=_progress,
-            )
-            logger.info(
-                "OpenCTI sync done: %d entities, %d relations",
-                result.entities_pulled,
-                result.relations_pulled,
-            )
-            heartbeat.update(
-                "running",
-                {
-                    "cycle_started_at": cycle_started_at,
-                    "entities_pulled": result.entities_pulled,
-                    "relations_pulled": result.relations_pulled,
-                },
-            )
-        except Exception as exc:
-            logger.exception("OpenCTI sync failed")
-            cycle_error = str(exc) or type(exc).__name__
-            heartbeat.update(
-                "error",
-                {
-                    "cycle_started_at": cycle_started_at,
-                    "opencti_url": settings.opencti_url,
-                    "error": cycle_error[:200],
-                },
-            )
-        finally:
-            if client:
-                try:
-                    client.close()
-                except Exception:
-                    pass
-
-        # Wait for next cycle or shutdown
-        try:
-            if cycle_error:
-                heartbeat.update(
-                    "error",
-                    {
-                        "cycle_started_at": cycle_started_at,
-                        "opencti_url": settings.opencti_url,
-                        "error": cycle_error[:200],
-                        "next_run_in_seconds": interval,
-                    },
-                )
-            else:
-                heartbeat.update("sleeping", {"next_run_in_seconds": interval})
-            await asyncio.wait_for(_shutdown.wait(), timeout=interval)
-            break
-        except asyncio.TimeoutError:
-            pass
-
-    logger.info("OpenCTI worker stopped")
-    heartbeat.update("stopped")
 
 
 def main() -> None:

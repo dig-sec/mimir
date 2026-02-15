@@ -225,9 +225,7 @@ def search_text_chunks(
     should_clauses: List[Dict[str, Any]] = []
     for term in terms[:6]:
         should_clauses.append({"match": {"text": {"query": term, "boost": 1.0}}})
-        should_clauses.append(
-            {"match_phrase": {"text": {"query": term, "boost": 3.0}}}
-        )
+        should_clauses.append({"match_phrase": {"text": {"query": term, "boost": 3.0}}})
 
     try:
         resp = es_client.search(
@@ -250,11 +248,13 @@ def search_text_chunks(
             # Truncate very long chunks to stay within prompt budget
             if len(text) > 800:
                 text = text[:800] + "…"
-            results.append({
-                "source_uri": uri,
-                "text": text,
-                "score": hit.get("_score", 0),
-            })
+            results.append(
+                {
+                    "source_uri": uri,
+                    "text": text,
+                    "score": hit.get("_score", 0),
+                }
+            )
         return results
     except Exception:
         _log.debug("Chunk text search failed", exc_info=True)
@@ -296,11 +296,13 @@ def search_provenance_snippets(
             seen.add(snippet)
             if len(snippet) > 500:
                 snippet = snippet[:500] + "…"
-            results.append({
-                "source_uri": src.get("source_uri", ""),
-                "snippet": snippet,
-                "model": src.get("model", ""),
-            })
+            results.append(
+                {
+                    "source_uri": src.get("source_uri", ""),
+                    "snippet": snippet,
+                    "model": src.get("model", ""),
+                }
+            )
         return results
     except Exception:
         _log.debug("Provenance snippet search failed", exc_info=True)
@@ -327,9 +329,7 @@ def search_relations_by_entity_names(
     # Step 1: Search for all entity variants by name
     should_clauses: List[Dict[str, Any]] = []
     for name in entity_names[:10]:
-        should_clauses.append(
-            {"match_phrase": {"name": {"query": name, "boost": 3.0}}}
-        )
+        should_clauses.append({"match_phrase": {"name": {"query": name, "boost": 3.0}}})
         should_clauses.append({"match": {"name": {"query": name, "operator": "and"}}})
         # Also check aliases
         should_clauses.append(
@@ -385,13 +385,15 @@ def search_relations_by_entity_names(
                     except Exception:
                         entity_map[eid] = eid
 
-            relations.append({
-                "id": hit["_id"],
-                "subject_name": entity_map.get(subj_id, subj_id),
-                "predicate": src.get("predicate", ""),
-                "object_name": entity_map.get(obj_id, obj_id),
-                "confidence": src.get("confidence", 0),
-            })
+            relations.append(
+                {
+                    "id": hit["_id"],
+                    "subject_name": entity_map.get(subj_id, subj_id),
+                    "predicate": src.get("predicate", ""),
+                    "object_name": entity_map.get(obj_id, obj_id),
+                    "confidence": src.get("confidence", 0),
+                }
+            )
     except Exception:
         _log.debug("Relation search by entity names failed", exc_info=True)
 
@@ -441,8 +443,7 @@ def gather_full_context(
         # Include useful attributes
         attrs = getattr(e, "attrs", None) or {}
         filtered_attrs = {
-            k: v for k, v in attrs.items()
-            if k not in ("canonical_key",) and v
+            k: v for k, v in attrs.items() if k not in ("canonical_key",) and v
         }
         if filtered_attrs:
             entry["attrs"] = filtered_attrs
@@ -463,12 +464,16 @@ def gather_full_context(
                 if edge.id in seen_relations:
                     continue
                 seen_relations.add(edge.id)
-                context["relations"].append({
-                    "subject_name": entity_map.get(edge.subject_id, edge.subject_id),
-                    "predicate": edge.predicate,
-                    "object_name": entity_map.get(edge.object_id, edge.object_id),
-                    "confidence": edge.confidence,
-                })
+                context["relations"].append(
+                    {
+                        "subject_name": entity_map.get(
+                            edge.subject_id, edge.subject_id
+                        ),
+                        "predicate": edge.predicate,
+                        "object_name": entity_map.get(edge.object_id, edge.object_id),
+                        "confidence": edge.confidence,
+                    }
+                )
 
                 # Provenance for each relation
                 try:
@@ -476,10 +481,12 @@ def gather_full_context(
                     for p in prov_list[:3]:
                         snippet = getattr(p, "snippet", None)
                         if snippet:
-                            context["provenance"].append({
-                                "source_uri": getattr(p, "source_uri", None),
-                                "snippet": snippet,
-                            })
+                            context["provenance"].append(
+                                {
+                                    "source_uri": getattr(p, "source_uri", None),
+                                    "snippet": snippet,
+                                }
+                            )
                 except Exception:
                     pass
         except Exception:
@@ -501,12 +508,14 @@ def gather_full_context(
         for rel in extra_rels:
             if rel["id"] not in seen_relations:
                 seen_relations.add(rel["id"])
-                context["relations"].append({
-                    "subject_name": rel["subject_name"],
-                    "predicate": rel["predicate"],
-                    "object_name": rel["object_name"],
-                    "confidence": rel["confidence"],
-                })
+                context["relations"].append(
+                    {
+                        "subject_name": rel["subject_name"],
+                        "predicate": rel["predicate"],
+                        "object_name": rel["object_name"],
+                        "confidence": rel["confidence"],
+                    }
+                )
 
     # 4. Search text chunks (RAG passages) — always do this for richer context
     es_client = graph_store.client
@@ -527,10 +536,12 @@ def gather_full_context(
         for ps in prov_snippets:
             if ps["snippet"] not in existing_snippets:
                 existing_snippets.add(ps["snippet"])
-                context["provenance"].append({
-                    "source_uri": ps["source_uri"],
-                    "snippet": ps["snippet"],
-                })
+                context["provenance"].append(
+                    {
+                        "source_uri": ps["source_uri"],
+                        "snippet": ps["snippet"],
+                    }
+                )
 
     # 6. Cap collections for prompt budget
     context["relations"] = context["relations"][:relation_limit]

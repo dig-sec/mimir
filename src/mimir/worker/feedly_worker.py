@@ -16,176 +16,89 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import signal
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
-from ..config import get_settings
+from ..config import Settings
 from ..connectors import sync_feedly_index
 from ..storage.factory import create_graph_store, create_run_store
-from .heartbeat import WorkerHeartbeat
+from ._base import CycleSummary, PreflightResult, WorkerHeartbeat, run_connector_loop
 
 logger = logging.getLogger(__name__)
 
-_shutdown = asyncio.Event()
+
+def _preflight(settings: Settings) -> PreflightResult:
+    if not settings.elastic_connector_enabled:
+        return PreflightResult(ok=False, reason="ELASTIC_CONNECTOR_ENABLED=0")
+    if not settings.elastic_connector_hosts_list:
+        return PreflightResult(ok=False, reason="no connector hosts configured")
+    interval = settings.feedly_worker_interval_minutes
+    if interval <= 0:
+        return PreflightResult(
+            ok=False, reason=f"FEEDLY_WORKER_INTERVAL_MINUTES={interval}"
+        )
+    return PreflightResult(
+        ok=True,
+        interval_seconds=interval * 60,
+        extra_heartbeat={
+            "queue_for_llm": settings.feedly_queue_for_llm,
+            "indices": settings.elastic_connector_indices_list or ["feedly_news"],
+        },
+    )
 
 
-def _handle_signal() -> None:
-    logger.info("Feedly worker: shutdown signal received")
-    _shutdown.set()
+def _run_cycle(
+    settings: Settings,
+    since: datetime,
+    until: datetime,
+    heartbeat: WorkerHeartbeat,
+) -> CycleSummary:
+    queue_for_llm = settings.feedly_queue_for_llm
+    graph_store = create_graph_store(settings)
+    run_store = create_run_store(settings) if queue_for_llm else None
+    indices = settings.elastic_connector_indices_list or ["feedly_news"]
+    errors: list[str] = []
 
-
-def _install_signal_handlers(loop: asyncio.AbstractEventLoop) -> None:
-    """Install shutdown handlers with a portable fallback."""
-    for sig in (signal.SIGINT, signal.SIGTERM):
+    for index_name in indices:
         try:
-            loop.add_signal_handler(sig, _handle_signal)
-        except (NotImplementedError, RuntimeError, ValueError):
-            try:
-                signal.signal(sig, lambda *_: _handle_signal())
-            except (ValueError, OSError):
-                logger.warning(
-                    "Feedly worker: unable to install signal handler for %s",
-                    sig.name,
-                )
+            result = sync_feedly_index(
+                settings=settings,
+                graph_store=graph_store,
+                run_store=run_store,
+                index_name=index_name,
+                since=since,
+                until=until,
+                max_articles=0,
+                queue_for_llm=queue_for_llm,
+            )
+            heartbeat.update(
+                "running",
+                {
+                    "last_index": index_name,
+                    "articles_processed": result.articles_processed,
+                    "entities_created": result.entities_created,
+                    "relations_created": result.relations_created,
+                },
+            )
+        except Exception as exc:
+            logger.exception("Feedly sync failed for index %s", index_name)
+            errors.append(f"{index_name}: {exc}")
+            heartbeat.update("error", {"last_index": index_name})
+
+    return CycleSummary(
+        log_message=f"synced {len(indices)} indices",
+        heartbeat_details={"indices": indices},
+        errors=errors,
+    )
 
 
 async def feedly_worker_loop() -> None:
     """Periodically sync Feedly articles from Elasticsearch."""
-    settings = get_settings()
-    heartbeat = WorkerHeartbeat(settings, "feedly-worker")
-    logging.basicConfig(level=settings.log_level)
-    _shutdown.clear()
-
-    if not settings.elastic_connector_enabled:
-        logger.info("Feedly worker: disabled (ELASTIC_CONNECTOR_ENABLED=0). Exiting.")
-        heartbeat.update(
-            "disabled", {"reason": "ELASTIC_CONNECTOR_ENABLED=0"}
-        )
-        return
-
-    if not settings.elastic_connector_hosts_list:
-        logger.warning("Feedly worker: no connector hosts configured. Exiting.")
-        heartbeat.update("disabled", {"reason": "no connector hosts configured"})
-        return
-
-    interval_minutes = settings.feedly_worker_interval_minutes
-    interval = interval_minutes * 60
-    if interval <= 0:
-        logger.info(
-            "Feedly worker: disabled (FEEDLY_WORKER_INTERVAL_MINUTES=%d). Exiting.",
-            interval_minutes,
-        )
-        heartbeat.update(
-            "disabled",
-            {"reason": "FEEDLY_WORKER_INTERVAL_MINUTES<=0", "interval_minutes": interval_minutes},
-        )
-        return
-
-    lookback_minutes = max(settings.elastic_connector_lookback_minutes, 0)
-    if settings.elastic_connector_lookback_minutes < 0:
-        logger.warning(
-            "Feedly worker: ELASTIC_CONNECTOR_LOOKBACK_MINUTES=%d is invalid; using 0",
-            settings.elastic_connector_lookback_minutes,
-        )
-
-    queue_for_llm = settings.feedly_queue_for_llm
-    graph_store = create_graph_store(settings)
-    run_store = create_run_store(settings) if queue_for_llm else None
-
-    loop = asyncio.get_running_loop()
-    _install_signal_handlers(loop)
-
-    logger.info(
-        "Feedly worker started — interval=%dm, lookback=%dm, queue_for_llm=%s",
-        interval_minutes,
-        lookback_minutes,
-        queue_for_llm,
+    await run_connector_loop(
+        worker_name="feedly-worker",
+        preflight=_preflight,
+        run_cycle=_run_cycle,
+        lookback_minutes_fn=lambda s: s.elastic_connector_lookback_minutes,
     )
-    heartbeat.update(
-        "running",
-        {
-            "interval_minutes": interval_minutes,
-            "lookback_minutes": lookback_minutes,
-            "queue_for_llm": queue_for_llm,
-        },
-    )
-
-    while not _shutdown.is_set():
-        cycle_end = datetime.now(timezone.utc)
-        since = cycle_end - timedelta(minutes=lookback_minutes)
-        indices = settings.elastic_connector_indices_list or ["feedly_news"]
-        cycle_failed_indices: list[str] = []
-        heartbeat.update(
-            "running",
-            {
-                "cycle_started_at": cycle_end.isoformat(),
-                "indices": indices,
-                "queue_for_llm": queue_for_llm,
-            },
-        )
-
-        for index_name in indices:
-            if _shutdown.is_set():
-                break
-            try:
-                result = await asyncio.to_thread(
-                    sync_feedly_index,
-                    settings=settings,
-                    graph_store=graph_store,
-                    run_store=run_store,
-                    index_name=index_name,
-                    since=since,
-                    until=cycle_end,
-                    max_articles=0,
-                    queue_for_llm=queue_for_llm,
-                )
-                logger.info(
-                    "Feedly sync %s: %d articles, %d entities, %d relations",
-                    index_name,
-                    result.articles_processed,
-                    result.entities_created,
-                    result.relations_created,
-                )
-                heartbeat.update(
-                    "running",
-                    {
-                        "last_index": index_name,
-                        "cycle_started_at": cycle_end.isoformat(),
-                        "articles_processed": result.articles_processed,
-                        "entities_created": result.entities_created,
-                        "relations_created": result.relations_created,
-                    },
-                )
-            except Exception:
-                logger.exception("Feedly sync failed for index %s", index_name)
-                cycle_failed_indices.append(index_name)
-                heartbeat.update(
-                    "error",
-                    {"last_index": index_name, "cycle_started_at": cycle_end.isoformat()},
-                )
-
-        # Wait for next cycle or shutdown
-        try:
-            if cycle_failed_indices:
-                heartbeat.update(
-                    "error",
-                    {
-                        "cycle_started_at": cycle_end.isoformat(),
-                        "failed_indices": cycle_failed_indices[:10],
-                        "next_run_in_seconds": interval,
-                    },
-                )
-            else:
-                heartbeat.update(
-                    "sleeping", {"next_run_in_seconds": interval, "indices": indices}
-                )
-            await asyncio.wait_for(_shutdown.wait(), timeout=interval)
-            break
-        except asyncio.TimeoutError:
-            pass
-
-    logger.info("Feedly worker stopped")
-    heartbeat.update("stopped")
 
 
 def main() -> None:

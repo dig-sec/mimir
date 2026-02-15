@@ -7,9 +7,7 @@ from tests.in_memory_graph_store import InMemoryGraphStore
 
 
 def test_parse_aikg_file_accepts_array_shape():
-    raw = (
-        b'[{"subject":"APT28","predicate":"targets","object":"Defense Industry"}]'
-    )
+    raw = b'[{"subject":"APT28","predicate":"targets","object":"Defense Industry"}]'
     rows = parse_aikg_file(raw, "aikg.json")
     assert len(rows) == 1
     assert rows[0]["subject"] == "APT28"
@@ -98,4 +96,3 @@ def test_ingest_aikg_infers_types_and_normalizes_predicate():
     predicates = {r.predicate for r in store.relations.values()}
     assert "related_to" in predicates
     assert "uses" in predicates
-

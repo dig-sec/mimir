@@ -45,44 +45,99 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterator, List, Optional, Tuple
-from uuid import UUID, uuid4, uuid5
+from typing import Any, Dict, Iterator, List, Optional
+from uuid import uuid4, uuid5
 
 import httpx
 
 from ..config import Settings
 from ..dedupe import EntityResolver
-from ..normalize import canonical_entity_key
 from ..schemas import Entity, Provenance, Relation
 from ..storage.base import GraphStore
+from ..utils.provenance import NS_PROVENANCE_WATCHER
 
 logger = logging.getLogger(__name__)
 
-# Namespace UUID for deterministic provenance IDs
-_NS_PROVENANCE = UUID("e4c8a2b6-f1d3-49e7-8c5a-2d6b0e9f3a71")
+_NS_PROVENANCE = NS_PROVENANCE_WATCHER
 
 # Pattern matchers for entity-type inference from trendy word names
 _CVE_RE = re.compile(r"^CVE-\d{4}-\d{4,}$", re.IGNORECASE)
 _APT_RE = re.compile(r"\bAPT[- ]?\d{1,3}\b", re.IGNORECASE)
-_THREAT_ACTOR_TERMS = frozenset({
-    "lazarus", "kimsuky", "turla", "cozy bear", "fancy bear",
-    "sandworm", "equation group", "apt28", "apt29", "apt30",
-    "apt31", "apt32", "apt33", "apt34", "apt35", "apt36",
-    "apt37", "apt38", "apt39", "apt40", "apt41",
-    "charming kitten", "phosphorus", "nobelium", "hafnium",
-    "lapsus$", "scattered spider", "volt typhoon",
-    "salt typhoon", "midnight blizzard",
-})
-_MALWARE_TERMS = frozenset({
-    "ransomware", "trojan", "wiper", "botnet", "rootkit",
-    "backdoor", "keylogger", "infostealer", "stealer",
-    "loader", "dropper", "rat", "cobra", "lockbit",
-    "blackcat", "alphv", "clop", "conti", "hive",
-    "revil", "ryuk", "wannacry", "emotet", "trickbot",
-    "qakbot", "icedid", "dridex", "raccoon", "redline",
-    "vidar", "formbook", "agent tesla", "asyncrat",
-    "remcos", "njrat", "darkgate", "pikabot",
-})
+_THREAT_ACTOR_TERMS = frozenset(
+    {
+        "lazarus",
+        "kimsuky",
+        "turla",
+        "cozy bear",
+        "fancy bear",
+        "sandworm",
+        "equation group",
+        "apt28",
+        "apt29",
+        "apt30",
+        "apt31",
+        "apt32",
+        "apt33",
+        "apt34",
+        "apt35",
+        "apt36",
+        "apt37",
+        "apt38",
+        "apt39",
+        "apt40",
+        "apt41",
+        "charming kitten",
+        "phosphorus",
+        "nobelium",
+        "hafnium",
+        "lapsus$",
+        "scattered spider",
+        "volt typhoon",
+        "salt typhoon",
+        "midnight blizzard",
+    }
+)
+_MALWARE_TERMS = frozenset(
+    {
+        "ransomware",
+        "trojan",
+        "wiper",
+        "botnet",
+        "rootkit",
+        "backdoor",
+        "keylogger",
+        "infostealer",
+        "stealer",
+        "loader",
+        "dropper",
+        "rat",
+        "cobra",
+        "lockbit",
+        "blackcat",
+        "alphv",
+        "clop",
+        "conti",
+        "hive",
+        "revil",
+        "ryuk",
+        "wannacry",
+        "emotet",
+        "trickbot",
+        "qakbot",
+        "icedid",
+        "dridex",
+        "raccoon",
+        "redline",
+        "vidar",
+        "formbook",
+        "agent tesla",
+        "asyncrat",
+        "remcos",
+        "njrat",
+        "darkgate",
+        "pikabot",
+    }
+)
 
 
 # ── Results ──────────────────────────────────────────────────
@@ -268,10 +323,6 @@ def _process_trendy_words(
                 continue
 
             entity_type = _infer_trendy_word_type(name)
-            created = _parse_datetime(item.get("created_at")) or datetime.now(
-                timezone.utc
-            )
-
             entity = resolver.resolve(name, entity_type=entity_type)
             entity.attrs["origin"] = "watcher"
             entity.attrs["source"] = "watcher-trendy"
@@ -451,9 +502,7 @@ def _process_dns_twisted(
             relations: List[Relation] = []
 
             # Twisted domain entity
-            twisted_entity = resolver.resolve(
-                domain_name, entity_type="twisted_domain"
-            )
+            twisted_entity = resolver.resolve(domain_name, entity_type="twisted_domain")
             twisted_entity.attrs["origin"] = "watcher"
             twisted_entity.attrs["source"] = "watcher-dns-finder"
             twisted_entity.attrs["source_uri"] = source_uri
@@ -616,7 +665,12 @@ def _process_sites(
                 )
                 site_entity.attrs["legitimacy_code"] = legitimacy
 
-            for flag in ("monitored", "takedown_request", "legal_team", "blocking_request"):
+            for flag in (
+                "monitored",
+                "takedown_request",
+                "legal_team",
+                "blocking_request",
+            ):
                 val = item.get(flag)
                 if val is not None:
                     site_entity.attrs[flag] = val
@@ -767,8 +821,13 @@ def sync_watcher(
         if settings.watcher_pull_trendy_words:
             try:
                 _process_trendy_words(
-                    client, graph_store, resolver, settings,
-                    since, source_uri, result,
+                    client,
+                    graph_store,
+                    resolver,
+                    settings,
+                    since,
+                    source_uri,
+                    result,
                 )
             except Exception as exc:
                 errmsg = f"Trendy words sync failed: {exc}"
@@ -779,8 +838,13 @@ def sync_watcher(
         if settings.watcher_pull_data_leaks:
             try:
                 _process_data_leaks(
-                    client, graph_store, resolver, settings,
-                    since, source_uri, result,
+                    client,
+                    graph_store,
+                    resolver,
+                    settings,
+                    since,
+                    source_uri,
+                    result,
                 )
             except Exception as exc:
                 errmsg = f"Data leaks sync failed: {exc}"
@@ -791,8 +855,13 @@ def sync_watcher(
         if settings.watcher_pull_dns_twisted:
             try:
                 _process_dns_twisted(
-                    client, graph_store, resolver, settings,
-                    since, source_uri, result,
+                    client,
+                    graph_store,
+                    resolver,
+                    settings,
+                    since,
+                    source_uri,
+                    result,
                 )
             except Exception as exc:
                 errmsg = f"DNS twisted sync failed: {exc}"
@@ -803,8 +872,13 @@ def sync_watcher(
         if settings.watcher_pull_site_monitoring:
             try:
                 _process_sites(
-                    client, graph_store, resolver, settings,
-                    since, source_uri, result,
+                    client,
+                    graph_store,
+                    resolver,
+                    settings,
+                    since,
+                    source_uri,
+                    result,
                 )
             except Exception as exc:
                 errmsg = f"Site monitoring sync failed: {exc}"

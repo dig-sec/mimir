@@ -12,14 +12,18 @@ def _normalize_root_path(root_path: str) -> str:
     return value.rstrip("/")
 
 
-def render_root_ui(root_path: str = "", api_base_url: str = "", ollama_model: str = "phi4") -> str:
+def render_root_ui(
+    root_path: str = "", api_base_url: str = "", ollama_model: str = "phi4"
+) -> str:
     """Render the shell HTML — all logic lives in static JS/CSS files."""
     root_prefix = _normalize_root_path(root_path)
     static_prefix = f"{root_prefix}/static" if root_prefix else "/static"
     docs_href = f"{root_prefix}/docs" if root_prefix else "/docs"
     root_path_json = json.dumps(root_prefix)
     api_base_json = json.dumps(str(api_base_url or "").strip())
-    model_display = json.dumps(str(ollama_model or "phi4").strip())[1:-1]  # strip quotes
+    model_display = json.dumps(str(ollama_model or "phi4").strip())[
+        1:-1
+    ]  # strip quotes
     return f"""<!doctype html>
 <html lang="en">
 <head>

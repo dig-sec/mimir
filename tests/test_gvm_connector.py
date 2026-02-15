@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
-from unittest.mock import MagicMock, patch
+from typing import List, Optional
+from unittest.mock import patch
 
 import pytest
 
@@ -34,10 +34,8 @@ from mimir.connectors.gvm import (
     sync_gvm,
 )
 from mimir.dedupe import EntityResolver
-from mimir.schemas import Entity
 
 from .in_memory_graph_store import InMemoryGraphStore
-
 
 # ── Fixtures ─────────────────────────────────────────────────
 
@@ -97,7 +95,7 @@ def _build_result_xml(
     if hostname:
         hn = ET.SubElement(host_elem, "hostname")
         hn.text = hostname
-    asset = ET.SubElement(host_elem, "asset", attrib={"asset_id": f"asset-{host}"})
+    ET.SubElement(host_elem, "asset", attrib={"asset_id": f"asset-{host}"})
 
     port_elem = ET.SubElement(root, "port")
     port_elem.text = port
@@ -454,42 +452,32 @@ class TestProcessResult:
             description="Critical Log4Shell vulnerability detected.",
         )
         result = GvmSyncResult()
-        _process_result(
-            elem, graph_store, resolver, "gvm://localhost", result
-        )
+        _process_result(elem, graph_store, resolver, "gvm://localhost", result)
 
         assert result.entities_created > 0
         assert result.relations_created > 0
 
         # Check host entity was created
         host_entities = [
-            e for e in graph_store.entities.values()
-            if e.type == "ip_address"
+            e for e in graph_store.entities.values() if e.type == "ip_address"
         ]
         assert len(host_entities) >= 1
         assert host_entities[0].name == "192.168.1.100"
 
         # Check vulnerability entity
         vuln_entities = [
-            e for e in graph_store.entities.values()
-            if e.type == "vulnerability"
+            e for e in graph_store.entities.values() if e.type == "vulnerability"
         ]
         assert len(vuln_entities) >= 1
         assert vuln_entities[0].attrs["cvss"] == 10.0
 
         # Check CVE entity
-        cve_entities = [
-            e for e in graph_store.entities.values()
-            if e.type == "cve"
-        ]
+        cve_entities = [e for e in graph_store.entities.values() if e.type == "cve"]
         assert len(cve_entities) >= 1
         assert cve_entities[0].attrs["id"] == "CVE-2021-44228"
 
         # Check port entity
-        port_entities = [
-            e for e in graph_store.entities.values()
-            if e.type == "port"
-        ]
+        port_entities = [e for e in graph_store.entities.values() if e.type == "port"]
         assert len(port_entities) >= 1
         assert port_entities[0].attrs["number"] == 443
 
@@ -499,9 +487,7 @@ class TestProcessResult:
             severity="5.0",
         )
         result = GvmSyncResult()
-        _process_result(
-            elem, graph_store, resolver, "gvm://localhost", result
-        )
+        _process_result(elem, graph_store, resolver, "gvm://localhost", result)
 
         # At least one relation should have provenance
         assert len(graph_store.provenance_by_relation) > 0
@@ -515,14 +501,11 @@ class TestProcessResult:
             severity="0.0",
         )
         result = GvmSyncResult()
-        _process_result(
-            elem, graph_store, resolver, "gvm://localhost", result
-        )
+        _process_result(elem, graph_store, resolver, "gvm://localhost", result)
 
         # Host should still be created
         host_entities = [
-            e for e in graph_store.entities.values()
-            if e.type == "ip_address"
+            e for e in graph_store.entities.values() if e.type == "ip_address"
         ]
         assert len(host_entities) >= 1
 
@@ -534,20 +517,16 @@ class TestProcessResult:
             version="9.0",
         )
         result = GvmSyncResult()
-        _process_result(
-            elem, graph_store, resolver, "gvm://localhost", result
-        )
+        _process_result(elem, graph_store, resolver, "gvm://localhost", result)
 
         service_entities = [
-            e for e in graph_store.entities.values()
-            if e.type == "service"
+            e for e in graph_store.entities.values() if e.type == "service"
         ]
         assert len(service_entities) >= 1
 
         # Should have runs_service relation
         runs_service = [
-            r for r in graph_store.relations.values()
-            if r.predicate == "runs_service"
+            r for r in graph_store.relations.values() if r.predicate == "runs_service"
         ]
         assert len(runs_service) >= 1
 
@@ -560,13 +539,10 @@ class TestProcessResult:
             cve_refs=["CVE-2024-0001", "CVE-2024-0002", "CVE-2024-0003"],
         )
         result = GvmSyncResult()
-        _process_result(
-            elem, graph_store, resolver, "gvm://localhost", result
-        )
+        _process_result(elem, graph_store, resolver, "gvm://localhost", result)
 
         cve_rels = [
-            r for r in graph_store.relations.values()
-            if r.predicate == "references_cve"
+            r for r in graph_store.relations.values() if r.predicate == "references_cve"
         ]
         assert len(cve_rels) == 3
 

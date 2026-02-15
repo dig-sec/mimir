@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, patch
-from uuid import uuid4
-
-import pytest
 
 from mimir.config import Settings
 from mimir.connectors.watcher import (
@@ -24,10 +20,8 @@ from mimir.connectors.watcher import (
     sync_watcher,
 )
 from mimir.dedupe import EntityResolver
-from mimir.schemas import Entity, Relation
 
 from .in_memory_graph_store import InMemoryGraphStore
-
 
 # ── Helpers ──────────────────────────────────────────────────
 
@@ -208,9 +202,7 @@ class TestApiPagination:
         assert items[0]["id"] == 1
 
     def test_multi_page(self):
-        client = FakeClient(
-            {"/api/test/": [[{"id": 1}], [{"id": 2}], [{"id": 3}]]}
-        )
+        client = FakeClient({"/api/test/": [[{"id": 1}], [{"id": 2}], [{"id": 3}]]})
         items = list(_iter_api_pages(client, "/api/test/"))
         assert len(items) == 3
 
@@ -278,8 +270,13 @@ class TestTrendyWords:
         )
 
         _process_trendy_words(
-            client, store, resolver, settings, since,
-            "watcher://test", result,
+            client,
+            store,
+            resolver,
+            settings,
+            since,
+            "watcher://test",
+            result,
         )
 
         assert result.trendy_words_processed == 1
@@ -314,8 +311,13 @@ class TestTrendyWords:
         )
 
         _process_trendy_words(
-            client, store, resolver, settings, since,
-            "watcher://test", result,
+            client,
+            store,
+            resolver,
+            settings,
+            since,
+            "watcher://test",
+            result,
         )
 
         assert result.trendy_words_processed == 1
@@ -355,8 +357,13 @@ class TestTrendyWords:
         )
 
         _process_trendy_words(
-            client, store, resolver, settings, since,
-            "watcher://test", result,
+            client,
+            store,
+            resolver,
+            settings,
+            since,
+            "watcher://test",
+            result,
         )
 
         assert result.trendy_words_processed == 1  # Only Atlas
@@ -387,8 +394,13 @@ class TestTrendyWords:
         )
 
         _process_trendy_words(
-            client, store, resolver, settings, since,
-            "watcher://test", result,
+            client,
+            store,
+            resolver,
+            settings,
+            since,
+            "watcher://test",
+            result,
         )
 
         assert result.trendy_words_processed == 0
@@ -422,8 +434,13 @@ class TestTrendyWords:
         )
 
         _process_trendy_words(
-            client, store, resolver, settings, since,
-            "watcher://test", result,
+            client,
+            store,
+            resolver,
+            settings,
+            since,
+            "watcher://test",
+            result,
         )
 
         ent = list(store.entities.values())[0]
@@ -456,8 +473,13 @@ class TestTrendyWords:
         )
 
         _process_trendy_words(
-            client, store, resolver, settings, since,
-            "watcher://test", result,
+            client,
+            store,
+            resolver,
+            settings,
+            since,
+            "watcher://test",
+            result,
         )
 
         ent = list(store.entities.values())[0]
@@ -493,8 +515,13 @@ class TestDataLeaks:
         )
 
         _process_data_leaks(
-            client, store, resolver, settings, since,
-            "watcher://test", result,
+            client,
+            store,
+            resolver,
+            settings,
+            since,
+            "watcher://test",
+            result,
         )
 
         assert result.data_leaks_processed == 1
@@ -502,16 +529,12 @@ class TestDataLeaks:
         assert result.relations_created == 1
 
         # Find the alert entity
-        alert = next(
-            e for e in store.entities.values() if e.type == "data_leak_alert"
-        )
+        alert = next(e for e in store.entities.values() if e.type == "data_leak_alert")
         assert alert.attrs["url"] == "https://pastebin.com/raw/abc123"
         assert alert.attrs["status"] == "active"
 
         # Find the keyword entity
-        kw = next(
-            e for e in store.entities.values() if e.type == "data_leak_keyword"
-        )
+        kw = next(e for e in store.entities.values() if e.type == "data_leak_keyword")
         assert "api_key_corp" in kw.name
 
         # Verify relation + provenance
@@ -545,8 +568,13 @@ class TestDataLeaks:
         )
 
         _process_data_leaks(
-            client, store, resolver, settings, since,
-            "watcher://test", result,
+            client,
+            store,
+            resolver,
+            settings,
+            since,
+            "watcher://test",
+            result,
         )
 
         assert result.data_leaks_processed == 1
@@ -586,17 +614,20 @@ class TestDnsTwisted:
         )
 
         _process_dns_twisted(
-            client, store, resolver, settings, since,
-            "watcher://test", result,
+            client,
+            store,
+            resolver,
+            settings,
+            since,
+            "watcher://test",
+            result,
         )
 
         assert result.dns_twisted_processed == 1
         assert result.entities_created == 2  # twisted + monitored
         assert result.relations_created == 1
 
-        twisted = next(
-            e for e in store.entities.values() if e.type == "twisted_domain"
-        )
+        twisted = next(e for e in store.entities.values() if e.type == "twisted_domain")
         assert twisted.attrs["fuzzer"] == "homoglyph"
 
         monitored = next(
@@ -635,8 +666,13 @@ class TestDnsTwisted:
         )
 
         _process_dns_twisted(
-            client, store, resolver, settings, since,
-            "watcher://test", result,
+            client,
+            store,
+            resolver,
+            settings,
+            since,
+            "watcher://test",
+            result,
         )
 
         assert result.dns_twisted_processed == 1
@@ -674,8 +710,13 @@ class TestDnsTwisted:
         )
 
         _process_dns_twisted(
-            client, store, resolver, settings, since,
-            "watcher://test", result,
+            client,
+            store,
+            resolver,
+            settings,
+            since,
+            "watcher://test",
+            result,
         )
 
         assert result.dns_twisted_processed == 1
@@ -722,26 +763,27 @@ class TestSiteMonitoring:
         )
 
         _process_sites(
-            client, store, resolver, settings, since,
-            "watcher://test", result,
+            client,
+            store,
+            resolver,
+            settings,
+            since,
+            "watcher://test",
+            result,
         )
 
         assert result.sites_processed == 1
         assert result.entities_created == 2  # site + IP
         assert result.relations_created == 1
 
-        site = next(
-            e for e in store.entities.values() if e.type == "monitored_site"
-        )
+        site = next(e for e in store.entities.values() if e.type == "monitored_site")
         assert site.attrs["http_status"] == 200
         assert site.attrs["registrar"] == "Namecheap Inc"
         assert site.attrs["legitimacy"] == "suspicious"
         assert site.attrs["content_fuzzy_hash"] == "T1abc123"
         assert site.attrs["mx_records"] == ["mx1.example.com", "mx2.example.com"]
 
-        ip = next(
-            e for e in store.entities.values() if e.type == "ip_address"
-        )
+        ip = next(e for e in store.entities.values() if e.type == "ip_address")
         assert ip.name == "93.184.216.34"
 
         rel = list(store.relations.values())[0]
@@ -782,8 +824,13 @@ class TestSiteMonitoring:
         )
 
         _process_sites(
-            client, store, resolver, settings, since,
-            "watcher://test", result,
+            client,
+            store,
+            resolver,
+            settings,
+            since,
+            "watcher://test",
+            result,
         )
 
         assert result.sites_processed == 1
@@ -792,9 +839,7 @@ class TestSiteMonitoring:
         # resolves_to x2 + mail_resolves_to = 3 relations
         assert result.relations_created == 3
 
-        site = next(
-            e for e in store.entities.values() if e.type == "monitored_site"
-        )
+        site = next(e for e in store.entities.values() if e.type == "monitored_site")
         assert site.attrs["legitimacy"] == "malicious_online"
         assert site.attrs["takedown_request"] is True
 

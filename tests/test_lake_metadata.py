@@ -23,10 +23,34 @@ def test_parse_source_uri_extracts_collection_and_record():
     assert parsed["collection"] == "feedly_news"
     assert parsed["record_id"] == "doc-42"
 
+    parsed = parse_source_uri("opencti://Threat-Actor/opencti--threat-actor--123")
+    assert parsed["source"] == "opencti"
+    assert parsed["collection"] == "threat_actor"
+    assert parsed["record_id"] == "opencti--threat-actor--123"
+
     parsed = parse_source_uri("file:///tmp/a.txt")
     assert parsed["source"] == "file"
     assert parsed["collection"] == "filesystem"
     assert parsed["record_id"] == "/tmp/a.txt"
+
+
+def test_parse_source_uri_handles_rss_and_structured_connector_sources():
+    parsed = parse_source_uri(
+        "rss://www.cisa.gov:cybersecurity-advisories_all.xml/abc123"
+    )
+    assert parsed["source"] == "rss"
+    assert parsed["collection"] == "www.cisa.gov:cybersecurity-advisories_all.xml"
+    assert parsed["record_id"] == "abc123"
+
+    parsed = parse_source_uri("watcher://http://127.0.0.1:9002")
+    assert parsed["source"] == "watcher"
+    assert parsed["collection"] == "instance"
+    assert parsed["record_id"] == "http://127.0.0.1:9002"
+
+    parsed = parse_source_uri("gvm://127.0.0.1")
+    assert parsed["source"] == "gvm"
+    assert parsed["collection"] == "instance"
+    assert parsed["record_id"] == "127.0.0.1"
 
 
 def test_build_lake_metadata_enriches_existing_metadata_without_dropping_fields():

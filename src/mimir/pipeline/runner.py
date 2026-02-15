@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
-from uuid import UUID, uuid4, uuid5
+from uuid import uuid4
 
 from ..chunking import chunk_text
 from ..config import Settings
@@ -16,8 +15,11 @@ from ..normalize import normalize_predicate
 from ..schemas import Entity, Provenance, Relation
 from ..storage.base import GraphStore
 from ..storage.run_store import RunStore
+from ..utils.datetime import to_utc as _to_utc_datetime
+from ..utils.provenance import NS_PROVENANCE_DEFAULT, det_prov_id
+from ..utils.text import snippet as _snippet
 
-_NS_PROVENANCE = UUID("c3d4e5f6-a7b8-9012-cdef-123456789012")
+_NS_PROVENANCE = NS_PROVENANCE_DEFAULT
 
 
 def _det_prov_id(
@@ -30,28 +32,19 @@ def _det_prov_id(
     end_offset: int,
     snippet: str,
 ) -> str:
-    snippet_hash = hashlib.sha1(snippet.encode("utf-8")).hexdigest()
-    material = (
-        f"{source_uri}|{relation_id}|{model}|{chunk_id}|"
-        f"{start_offset}|{end_offset}|{snippet_hash}"
+    return det_prov_id(
+        namespace=_NS_PROVENANCE,
+        source_uri=source_uri,
+        relation_id=relation_id,
+        model=model,
+        chunk_id=chunk_id,
+        start_offset=start_offset,
+        end_offset=end_offset,
+        snippet=snippet,
     )
-    return str(uuid5(_NS_PROVENANCE, material))
 
 
 logger = logging.getLogger(__name__)
-
-
-def _snippet(text: str, limit: int = 400) -> str:
-    text = text.strip()
-    if len(text) <= limit:
-        return text
-    return text[:limit].rstrip() + "..."
-
-
-def _to_utc_datetime(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
 
 
 def _parse_epoch_timestamp(value: float) -> Optional[datetime]:
@@ -201,7 +194,9 @@ async def process_run(
             settings.max_document_size_mb,
         )
         run_store.update_run_status(
-            run_id, "skipped", f"Document exceeds {settings.max_document_size_mb}MB limit"
+            run_id,
+            "skipped",
+            f"Document exceeds {settings.max_document_size_mb}MB limit",
         )
         return
 

@@ -67,7 +67,9 @@ def test_access_control_bypasses_options_and_static():
 
 def test_access_control_requires_valid_token_when_configured():
     denied = authorize_request(
-        _make_request(headers={"Authorization": "Bearer wrong"}, client_host="127.0.0.1"),
+        _make_request(
+            headers={"Authorization": "Bearer wrong"}, client_host="127.0.0.1"
+        ),
         api_token="top-secret",
         allow_localhost_without_token=False,
     )

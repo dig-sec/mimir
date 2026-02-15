@@ -11,17 +11,18 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from uuid import UUID, uuid4, uuid5
+from uuid import uuid4
 
 from ..dedupe import EntityResolver
 from ..normalize import normalize_predicate
 from ..schemas import ExtractionRun, Provenance, Relation
 from ..storage.base import GraphStore
+from ..utils.provenance import NS_PROVENANCE_DEFAULT, det_prov_id
 from .client import OpenCTIClient
 
 logger = logging.getLogger(__name__)
 
-_NS_PROVENANCE = UUID("c3d4e5f6-a7b8-9012-cdef-123456789012")
+_NS_PROVENANCE = NS_PROVENANCE_DEFAULT
 
 
 def _det_prov_id(
@@ -34,12 +35,16 @@ def _det_prov_id(
     end_offset: int,
     snippet: str,
 ) -> str:
-    snippet_hash = hashlib.sha1(snippet.encode("utf-8")).hexdigest()
-    material = (
-        f"{source_uri}|{relation_id}|{model}|{chunk_id}|"
-        f"{start_offset}|{end_offset}|{snippet_hash}"
+    return det_prov_id(
+        namespace=_NS_PROVENANCE,
+        source_uri=source_uri,
+        relation_id=relation_id,
+        model=model,
+        chunk_id=chunk_id,
+        start_offset=start_offset,
+        end_offset=end_offset,
+        snippet=snippet,
     )
-    return str(uuid5(_NS_PROVENANCE, material))
 
 
 # OpenCTI entity_type → Mimir entity type

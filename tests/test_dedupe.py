@@ -1,5 +1,5 @@
-from tests.in_memory_graph_store import InMemoryGraphStore
 from mimir.dedupe import EntityResolver
+from tests.in_memory_graph_store import InMemoryGraphStore
 
 
 def test_entity_dedupe_by_key():
