@@ -251,7 +251,7 @@ Backend:
 
 - `src/mimir/storage/metrics_store.py`
 - `src/mimir/storage/elastic_store.py`
-- `src/mimir/api/routes.py`
+- `src/mimir/api/routes/`
 - `src/mimir/worker/llm_worker.py`
 
 Frontend:

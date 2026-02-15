@@ -126,7 +126,7 @@ src/mimir/
 │
 ├── api/                   # FastAPI application
 │   ├── app.py             # App factory + lifespan
-│   ├── routes.py          # All REST + HTML endpoints
+│   ├── routes/            # Route package (REST + HTML endpoint modules)
 │   ├── tasks.py           # In-memory background task manager
 │   ├── ui.py              # Jinja2 HTML template rendering
 │   ├── visualize.py       # Graph visualization helpers

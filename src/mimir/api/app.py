@@ -62,7 +62,7 @@ async def lifespan(app: FastAPI):
     # malware_worker, llm_worker).  The API process no longer runs an
     # inline scheduler.
     #
-    # Manual sync endpoints in routes.py still work — they just trigger
+    # Manual sync endpoints in the routes package still work — they just trigger
     # one-shot syncs on demand.
     logger.info("API started.  Data ingestion handled by separate worker processes.")
     rollup_task = asyncio.create_task(_metrics_rollup_loop())
