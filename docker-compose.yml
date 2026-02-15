@@ -53,6 +53,50 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  # ── Public RSS threat feed worker ──────────────────────────
+  rss-worker:
+    build: .
+    restart: on-failure
+    command: ["python", "-m", "mimir.worker.rss_worker"]
+    env_file: .env
+    environment:
+      - RSS_WORKER_ENABLED=0
+      - RSS_WORKER_INTERVAL_MINUTES=30
+    volumes:
+      - /mnt/nvme0n1p1/mimir:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ── GVM/OpenVAS vulnerability worker ───────────────────────
+  gvm-worker:
+    build: .
+    restart: on-failure
+    command: ["python", "-m", "mimir.worker.gvm_worker"]
+    env_file: .env
+    environment:
+      - GVM_WORKER_ENABLED=0
+      - GVM_WORKER_INTERVAL_MINUTES=30
+      - GVM_WORKER_LOOKBACK_MINUTES=180
+    volumes:
+      - /mnt/nvme0n1p1/mimir:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ── Watcher threat-intelligence worker ─────────────────────
+  watcher-worker:
+    build: .
+    restart: on-failure
+    command: ["python", "-m", "mimir.worker.watcher_worker"]
+    env_file: .env
+    environment:
+      - WATCHER_WORKER_ENABLED=0
+      - WATCHER_WORKER_INTERVAL_MINUTES=30
+      - WATCHER_WORKER_LOOKBACK_MINUTES=180
+    volumes:
+      - /mnt/nvme0n1p1/mimir:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
   # ── Elasticsearch source worker ────────────────────────────
   elastic-worker:
     build: .

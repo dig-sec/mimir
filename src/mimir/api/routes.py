@@ -14,6 +14,9 @@ from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from ..config import get_settings
 from ..connectors import sync_feedly_index
 from ..connectors.aikg import ingest_aikg_triples, parse_aikg_file
+from ..connectors.gvm import sync_gvm
+from ..connectors.rss import pull_from_rss_feeds
+from ..connectors.watcher import sync_watcher
 from ..elastic_source import ElasticsearchSourceClient, pull_from_elasticsearch
 from ..export import export_csv_zip, export_graphml, export_json, export_markdown
 from ..graph_limits import limit_subgraph
@@ -26,6 +29,7 @@ from ..schemas import (
     ExtractionRun,
     IngestRequest,
     IngestResponse,
+    PathResult,
     QueryRequest,
     RunStatusResponse,
     Subgraph,
@@ -168,6 +172,39 @@ def _worker_specs() -> List[Dict[str, Any]]:
         and settings.malware_worker_interval_minutes > 0
         and bool(malware_indices)
     )
+    rss_enabled = (
+        settings.rss_worker_enabled
+        and settings.rss_worker_interval_minutes > 0
+        and bool(settings.rss_worker_feeds_list)
+    )
+    gvm_conn_type = settings.gvm_connection_type.strip().lower()
+    gvm_conn_ready = (
+        (gvm_conn_type == "unix" and bool(settings.gvm_socket_path))
+        or (
+            gvm_conn_type == "tls"
+            and bool(settings.gvm_host)
+            and settings.gvm_port > 0
+        )
+    )
+    gvm_enabled = (
+        settings.gvm_worker_enabled
+        and settings.gvm_worker_interval_minutes > 0
+        and gvm_conn_ready
+    )
+    watcher_modules_enabled = any(
+        (
+            settings.watcher_pull_trendy_words,
+            settings.watcher_pull_data_leaks,
+            settings.watcher_pull_dns_twisted,
+            settings.watcher_pull_site_monitoring,
+        )
+    )
+    watcher_enabled = (
+        settings.watcher_worker_enabled
+        and settings.watcher_worker_interval_minutes > 0
+        and bool(settings.watcher_base_url)
+        and watcher_modules_enabled
+    )
 
     return [
         {
@@ -229,6 +266,45 @@ def _worker_specs() -> List[Dict[str, Any]]:
                 ""
                 if malware_enabled
                 else "requires MALWARE_WORKER_ENABLED=1, connector hosts, connector enabled, interval > 0, and indices"
+            ),
+        },
+        {
+            "id": "rss-worker",
+            "label": "Public RSS Feeds",
+            "enabled": rss_enabled,
+            "interval_seconds": max(settings.rss_worker_interval_minutes, 0) * 60,
+            "disabled_reason": (
+                ""
+                if rss_enabled
+                else "requires RSS_WORKER_ENABLED=1, RSS_WORKER_INTERVAL_MINUTES>0, and RSS_WORKER_FEEDS"
+            ),
+        },
+        {
+            "id": "gvm-worker",
+            "label": "GVM Vulnerability Sync",
+            "enabled": gvm_enabled,
+            "interval_seconds": max(settings.gvm_worker_interval_minutes, 0) * 60,
+            "disabled_reason": (
+                ""
+                if gvm_enabled
+                else (
+                    "requires GVM_WORKER_ENABLED=1, GVM_WORKER_INTERVAL_MINUTES>0, "
+                    "and valid GVM connection settings"
+                )
+            ),
+        },
+        {
+            "id": "watcher-worker",
+            "label": "Watcher Threat Sync",
+            "enabled": watcher_enabled,
+            "interval_seconds": max(settings.watcher_worker_interval_minutes, 0) * 60,
+            "disabled_reason": (
+                ""
+                if watcher_enabled
+                else (
+                    "requires WATCHER_WORKER_ENABLED=1, WATCHER_WORKER_INTERVAL_MINUTES>0, "
+                    "WATCHER_BASE_URL, and at least one WATCHER_PULL_* module enabled"
+                )
             ),
         },
     ]
@@ -791,6 +867,163 @@ def query(payload: QueryRequest, response: Response) -> Subgraph:
         response.headers["X-Mimir-Limited-Nodes"] = str(len(capped_subgraph.nodes))
         response.headers["X-Mimir-Limited-Edges"] = str(len(capped_subgraph.edges))
     return capped_subgraph
+
+
+# ── path-finding endpoints ─────────────────────────────────────────────
+
+
+def _resolve_path_entity(
+    entity_id: Optional[str], entity_name: Optional[str], label: str
+) -> str:
+    """Resolve an entity by ID or name search, returning its ID."""
+    if entity_id:
+        entity = graph_store.get_entity(entity_id)
+        if not entity:
+            raise HTTPException(
+                status_code=404, detail=f"{label} entity not found"
+            )
+        return entity.id
+    if entity_name:
+        matches = graph_store.search_entities(entity_name)
+        if not matches:
+            raise HTTPException(
+                status_code=404, detail=f"{label} entity not found"
+            )
+        return matches[0].id
+    raise HTTPException(
+        status_code=400, detail=f"{label}_id or {label}_name required"
+    )
+
+
+@router.get("/path/shortest", response_model=PathResult)
+def shortest_path(
+    source_id: Optional[str] = Query(default=None),
+    source_name: Optional[str] = Query(default=None),
+    target_id: Optional[str] = Query(default=None),
+    target_name: Optional[str] = Query(default=None),
+    min_confidence: float = Query(default=0.0, ge=0.0, le=1.0),
+    max_depth: int = Query(default=6, ge=1, le=10),
+) -> PathResult:
+    """Find the shortest path between two entities (BFS)."""
+    src = _resolve_path_entity(source_id, source_name, "source")
+    tgt = _resolve_path_entity(target_id, target_name, "target")
+    return graph_store.find_shortest_path(
+        source_id=src,
+        target_id=tgt,
+        min_confidence=min_confidence,
+        max_depth=max_depth,
+    )
+
+
+@router.get("/path/all", response_model=PathResult)
+def all_paths(
+    source_id: Optional[str] = Query(default=None),
+    source_name: Optional[str] = Query(default=None),
+    target_id: Optional[str] = Query(default=None),
+    target_name: Optional[str] = Query(default=None),
+    min_confidence: float = Query(default=0.0, ge=0.0, le=1.0),
+    max_depth: int = Query(default=4, ge=1, le=8),
+    max_paths: int = Query(default=20, ge=1, le=100),
+) -> PathResult:
+    """Find all simple paths between two entities (DFS, depth-limited)."""
+    src = _resolve_path_entity(source_id, source_name, "source")
+    tgt = _resolve_path_entity(target_id, target_name, "target")
+    return graph_store.find_all_paths(
+        source_id=src,
+        target_id=tgt,
+        min_confidence=min_confidence,
+        max_depth=max_depth,
+        max_paths=max_paths,
+    )
+
+
+@router.get("/path/longest", response_model=PathResult)
+def longest_path(
+    source_id: Optional[str] = Query(default=None),
+    source_name: Optional[str] = Query(default=None),
+    target_id: Optional[str] = Query(default=None),
+    target_name: Optional[str] = Query(default=None),
+    min_confidence: float = Query(default=0.0, ge=0.0, le=1.0),
+    max_depth: int = Query(default=6, ge=1, le=10),
+) -> PathResult:
+    """Find the longest simple path between two entities."""
+    src = _resolve_path_entity(source_id, source_name, "source")
+    tgt = _resolve_path_entity(target_id, target_name, "target")
+    return graph_store.find_longest_path(
+        source_id=src,
+        target_id=tgt,
+        min_confidence=min_confidence,
+        max_depth=max_depth,
+    )
+
+
+@router.get("/path/visualize", response_class=HTMLResponse)
+def visualize_path(
+    source_id: Optional[str] = Query(default=None),
+    source_name: Optional[str] = Query(default=None),
+    target_id: Optional[str] = Query(default=None),
+    target_name: Optional[str] = Query(default=None),
+    algorithm: str = Query(default="shortest"),
+    min_confidence: float = Query(default=0.0, ge=0.0, le=1.0),
+    max_depth: int = Query(default=6, ge=1, le=10),
+) -> HTMLResponse:
+    """Visualize a path between two entities in the graph explorer."""
+    src = _resolve_path_entity(source_id, source_name, "source")
+    tgt = _resolve_path_entity(target_id, target_name, "target")
+
+    if algorithm == "longest":
+        result = graph_store.find_longest_path(
+            source_id=src,
+            target_id=tgt,
+            min_confidence=min_confidence,
+            max_depth=max_depth,
+        )
+    elif algorithm == "all":
+        result = graph_store.find_all_paths(
+            source_id=src,
+            target_id=tgt,
+            min_confidence=min_confidence,
+            max_depth=max_depth,
+        )
+    else:
+        result = graph_store.find_shortest_path(
+            source_id=src,
+            target_id=tgt,
+            min_confidence=min_confidence,
+            max_depth=max_depth,
+        )
+
+    if not result.paths:
+        raise HTTPException(status_code=404, detail="No path found between entities")
+
+    # Merge all paths into a single Subgraph for rendering
+    all_nodes: dict[str, any] = {}
+    all_edges: dict[str, any] = {}
+    path_node_ids: set[str] = set()
+    path_edge_ids: set[str] = set()
+
+    for path in result.paths:
+        for node in path.nodes:
+            all_nodes[node.id] = node
+            path_node_ids.add(node.id)
+        for edge in path.edges:
+            all_edges[edge.id] = edge
+            path_edge_ids.add(edge.id)
+
+    from ..schemas import SubgraphEdge, SubgraphNode
+
+    subgraph = Subgraph(
+        nodes=list(all_nodes.values()),
+        edges=list(all_edges.values()),
+    )
+
+    src_entity = graph_store.get_entity(src)
+    tgt_entity = graph_store.get_entity(tgt)
+    src_label = src_entity.name if src_entity else src
+    tgt_label = tgt_entity.name if tgt_entity else tgt
+    title = f"Path: {src_label} → {tgt_label} ({algorithm}, {len(result.paths)} path(s))"
+
+    return render_html(subgraph, title=title)
 
 
 @router.get("/explain", response_model=ExplainResponse | ExplainEntityResponse)
@@ -1418,6 +1651,248 @@ async def feedly_pull(
     return {"task_id": task.id, "status": "running"}
 
 
+@router.post("/api/rss/pull")
+async def rss_pull(
+    feeds: Optional[List[str]] = Query(
+        default=None,
+        description="Optional list of RSS/Atom feed URLs. Defaults to RSS_WORKER_FEEDS.",
+    ),
+    lookback_hours: int = Query(
+        default=settings.rss_worker_lookback_hours,
+        ge=0,
+        le=8760,
+        description="Only queue entries newer than N hours (0=all available in feed).",
+    ),
+    max_items_per_feed: int = Query(default=settings.rss_worker_max_items_per_feed, ge=1, le=5000),
+):
+    """Pull public RSS/Atom feeds and queue unseen entries for LLM extraction."""
+    selected_feeds: List[str] = []
+    for raw in feeds or settings.rss_worker_feeds_list:
+        for value in raw.split(","):
+            value = value.strip()
+            if value:
+                selected_feeds.append(value)
+    if not selected_feeds:
+        raise HTTPException(
+            status_code=400,
+            detail="No RSS feeds configured (set RSS_WORKER_FEEDS)",
+        )
+
+    task = task_manager.create(
+        "rss_pull",
+        {
+            "feeds": selected_feeds,
+            "lookback_hours": lookback_hours,
+            "max_items_per_feed": max_items_per_feed,
+        },
+    )
+    task_manager.update(
+        task.id, status=TaskStatus.RUNNING, progress="Starting RSS pull..."
+    )
+
+    def _run_sync():
+        try:
+            result = pull_from_rss_feeds(
+                run_store,
+                settings,
+                selected_feeds,
+                lookback_hours=lookback_hours,
+                max_items_per_feed=max_items_per_feed,
+                min_text_chars=settings.rss_worker_min_text_chars,
+                timeout_seconds=settings.rss_worker_timeout_seconds,
+                progress_cb=lambda msg: task_manager.update(task.id, progress=msg),
+            )
+            task_manager.update(
+                task.id,
+                status=TaskStatus.COMPLETED,
+                progress=(
+                    "Done: "
+                    f"{result.runs_queued} queued, "
+                    f"{result.skipped_existing} existing, "
+                    f"{result.skipped_old} old, "
+                    f"{result.skipped_empty} empty"
+                ),
+                detail={
+                    "feeds_scanned": result.feeds_scanned,
+                    "items_seen": result.items_seen,
+                    "runs_queued": result.runs_queued,
+                    "skipped_existing": result.skipped_existing,
+                    "skipped_old": result.skipped_old,
+                    "skipped_empty": result.skipped_empty,
+                    "errors": result.errors[:50],
+                },
+                finished_at=datetime.utcnow().isoformat(),
+            )
+        except Exception as exc:
+            task_manager.update(
+                task.id,
+                status=TaskStatus.FAILED,
+                error=str(exc),
+                finished_at=datetime.utcnow().isoformat(),
+            )
+
+    async def _run():
+        import asyncio
+
+        await asyncio.to_thread(_run_sync)
+
+    task_manager.start_async(task.id, _run())
+    return {"task_id": task.id, "status": "running"}
+
+
+@router.post("/api/gvm/pull")
+async def gvm_pull(
+    lookback_minutes: int = Query(
+        default=settings.gvm_worker_lookback_minutes,
+        ge=0,
+        description="Only process GVM results newer than N minutes (0=all available).",
+    ),
+    max_results: int = Query(
+        default=settings.gvm_max_results,
+        ge=1,
+        le=50000,
+        description="Maximum number of GVM results to process.",
+    ),
+):
+    """Pull vulnerability scan results from GVM/OpenVAS."""
+    task = task_manager.create(
+        "gvm_pull",
+        {
+            "lookback_minutes": lookback_minutes,
+            "max_results": max_results,
+        },
+    )
+    task_manager.update(
+        task.id, status=TaskStatus.RUNNING, progress="Starting GVM pull..."
+    )
+
+    since = (
+        datetime.now(timezone.utc) - timedelta(minutes=lookback_minutes)
+        if lookback_minutes > 0
+        else datetime(2000, 1, 1, tzinfo=timezone.utc)
+    )
+
+    def _run_sync():
+        try:
+            result = sync_gvm(
+                settings=settings,
+                graph_store=graph_store,
+                since=since,
+                max_results=max_results,
+            )
+            task_manager.update(
+                task.id,
+                status=TaskStatus.COMPLETED,
+                progress=(
+                    f"Done: {result.results_processed} results, "
+                    f"{result.hosts_seen} hosts, "
+                    f"{result.entities_created} entities, "
+                    f"{result.relations_created} relations"
+                ),
+                detail={
+                    "results_processed": result.results_processed,
+                    "hosts_seen": result.hosts_seen,
+                    "entities_created": result.entities_created,
+                    "relations_created": result.relations_created,
+                    "skipped_low_qod": result.skipped_low_qod,
+                    "errors": result.errors[:50],
+                },
+                finished_at=datetime.utcnow().isoformat(),
+            )
+        except Exception as exc:
+            task_manager.update(
+                task.id,
+                status=TaskStatus.FAILED,
+                error=str(exc),
+                finished_at=datetime.utcnow().isoformat(),
+            )
+
+    async def _run():
+        import asyncio
+
+        await asyncio.to_thread(_run_sync)
+
+    task_manager.start_async(task.id, _run())
+    return {"task_id": task.id, "status": "running"}
+
+
+@router.post("/api/watcher/pull")
+async def watcher_pull(
+    lookback_minutes: int = Query(
+        default=settings.watcher_worker_lookback_minutes,
+        ge=0,
+        description="Only process Watcher records newer than N minutes (0=all available).",
+    ),
+):
+    """Pull structured threat-intelligence records from Watcher."""
+    if not settings.watcher_base_url:
+        raise HTTPException(
+            status_code=503,
+            detail="Watcher not configured (set WATCHER_BASE_URL)",
+        )
+
+    task = task_manager.create(
+        "watcher_pull",
+        {
+            "lookback_minutes": lookback_minutes,
+        },
+    )
+    task_manager.update(
+        task.id, status=TaskStatus.RUNNING, progress="Starting Watcher pull..."
+    )
+
+    since = (
+        datetime.now(timezone.utc) - timedelta(minutes=lookback_minutes)
+        if lookback_minutes > 0
+        else datetime(2000, 1, 1, tzinfo=timezone.utc)
+    )
+
+    def _run_sync():
+        try:
+            result = sync_watcher(
+                settings=settings,
+                graph_store=graph_store,
+                since=since,
+            )
+            task_manager.update(
+                task.id,
+                status=TaskStatus.COMPLETED,
+                progress=(
+                    f"Done: {result.trendy_words_processed} trendy, "
+                    f"{result.data_leaks_processed} leaks, "
+                    f"{result.dns_twisted_processed} twisted, "
+                    f"{result.sites_processed} sites"
+                ),
+                detail={
+                    "trendy_words_processed": result.trendy_words_processed,
+                    "data_leaks_processed": result.data_leaks_processed,
+                    "dns_twisted_processed": result.dns_twisted_processed,
+                    "sites_processed": result.sites_processed,
+                    "entities_created": result.entities_created,
+                    "relations_created": result.relations_created,
+                    "skipped_low_score": result.skipped_low_score,
+                    "skipped_low_occurrences": result.skipped_low_occurrences,
+                    "errors": result.errors[:50],
+                },
+                finished_at=datetime.utcnow().isoformat(),
+            )
+        except Exception as exc:
+            task_manager.update(
+                task.id,
+                status=TaskStatus.FAILED,
+                error=str(exc),
+                finished_at=datetime.utcnow().isoformat(),
+            )
+
+    async def _run():
+        import asyncio
+
+        await asyncio.to_thread(_run_sync)
+
+    task_manager.start_async(task.id, _run())
+    return {"task_id": task.id, "status": "running"}
+
+
 @router.post("/api/sources/pull-all")
 async def pull_all_sources(
     lookback_minutes: int = Query(
@@ -1435,6 +1910,9 @@ async def pull_all_sources(
     Runs each connector in its own thread:
      - Feedly structured CTI import
      - OpenCTI entity pull (if configured)
+     - Public RSS threat feeds (if enabled/configured)
+     - GVM/OpenVAS vulnerability findings (if enabled/configured)
+     - Watcher threat-intelligence records (if enabled/configured)
      - Filesystem scan (if watched folders configured)
 
     Each connector gets its own sub-task for independent progress tracking.
@@ -1568,6 +2046,151 @@ async def pull_all_sources(
             if opencti_client:
                 opencti_client.close()
 
+    def _pull_rss() -> str:
+        sid = _make_sub("rss_pull", "Public RSS feeds")
+        if not settings.rss_worker_enabled:
+            task_manager.update(
+                sid,
+                status=TaskStatus.COMPLETED,
+                progress="Skipped (RSS worker disabled)",
+                finished_at=datetime.utcnow().isoformat(),
+            )
+            return "RSS: skipped (RSS_WORKER_ENABLED=0)"
+        feeds = settings.rss_worker_feeds_list
+        if not feeds:
+            task_manager.update(
+                sid,
+                status=TaskStatus.COMPLETED,
+                progress="Skipped (no RSS feeds configured)",
+                finished_at=datetime.utcnow().isoformat(),
+            )
+            return "RSS: skipped (no RSS_WORKER_FEEDS)"
+        try:
+            # Align ad-hoc pull-all lookback (minutes) to RSS lookback (hours).
+            if lookback_minutes > 0:
+                lookback_hours = max(1, (lookback_minutes + 59) // 60)
+            else:
+                lookback_hours = settings.rss_worker_lookback_hours
+            rss_result = pull_from_rss_feeds(
+                run_store,
+                settings,
+                feeds,
+                lookback_hours=lookback_hours,
+                max_items_per_feed=settings.rss_worker_max_items_per_feed,
+                min_text_chars=settings.rss_worker_min_text_chars,
+                timeout_seconds=settings.rss_worker_timeout_seconds,
+                progress_cb=lambda msg: task_manager.update(sid, progress=f"RSS: {msg}"),
+            )
+            summary = (
+                f"RSS: {rss_result.runs_queued} queued, "
+                f"{rss_result.skipped_existing} existing, "
+                f"{rss_result.skipped_old} old"
+            )
+            task_manager.update(
+                sid,
+                status=TaskStatus.COMPLETED,
+                progress=summary,
+                finished_at=datetime.utcnow().isoformat(),
+            )
+            return summary
+        except Exception as exc:
+            task_manager.update(
+                sid,
+                status=TaskStatus.FAILED,
+                error=str(exc),
+                progress=f"RSS: FAILED ({exc})",
+                finished_at=datetime.utcnow().isoformat(),
+            )
+            return f"RSS: FAILED ({exc})"
+
+    def _pull_gvm() -> str:
+        sid = _make_sub("gvm_pull", "GVM vulnerability scan")
+        if not settings.gvm_worker_enabled:
+            task_manager.update(
+                sid,
+                status=TaskStatus.COMPLETED,
+                progress="Skipped (GVM worker disabled)",
+                finished_at=datetime.utcnow().isoformat(),
+            )
+            return "GVM: skipped (GVM_WORKER_ENABLED=0)"
+        try:
+            gvm_result = sync_gvm(
+                settings=settings,
+                graph_store=graph_store,
+                since=since,
+                until=datetime.now(timezone.utc),
+            )
+            summary = (
+                f"GVM: {gvm_result.results_processed} results, "
+                f"{gvm_result.hosts_seen} hosts, "
+                f"{gvm_result.entities_created} entities, "
+                f"{gvm_result.relations_created} rels"
+            )
+            task_manager.update(
+                sid,
+                status=TaskStatus.COMPLETED,
+                progress=summary,
+                finished_at=datetime.utcnow().isoformat(),
+            )
+            return summary
+        except Exception as exc:
+            task_manager.update(
+                sid,
+                status=TaskStatus.FAILED,
+                error=str(exc),
+                progress=f"GVM: FAILED ({exc})",
+                finished_at=datetime.utcnow().isoformat(),
+            )
+            return f"GVM: FAILED ({exc})"
+
+    def _pull_watcher() -> str:
+        sid = _make_sub("watcher_pull", "Watcher threat intelligence")
+        if not settings.watcher_worker_enabled:
+            task_manager.update(
+                sid,
+                status=TaskStatus.COMPLETED,
+                progress="Skipped (Watcher worker disabled)",
+                finished_at=datetime.utcnow().isoformat(),
+            )
+            return "Watcher: skipped (WATCHER_WORKER_ENABLED=0)"
+        if not settings.watcher_base_url:
+            task_manager.update(
+                sid,
+                status=TaskStatus.COMPLETED,
+                progress="Skipped (Watcher base URL not configured)",
+                finished_at=datetime.utcnow().isoformat(),
+            )
+            return "Watcher: skipped (missing WATCHER_BASE_URL)"
+        try:
+            watcher_result = sync_watcher(
+                settings=settings,
+                graph_store=graph_store,
+                since=since,
+                until=datetime.now(timezone.utc),
+            )
+            summary = (
+                f"Watcher: {watcher_result.trendy_words_processed} trendy, "
+                f"{watcher_result.data_leaks_processed} leaks, "
+                f"{watcher_result.dns_twisted_processed} twisted, "
+                f"{watcher_result.sites_processed} sites"
+            )
+            task_manager.update(
+                sid,
+                status=TaskStatus.COMPLETED,
+                progress=summary,
+                finished_at=datetime.utcnow().isoformat(),
+            )
+            return summary
+        except Exception as exc:
+            task_manager.update(
+                sid,
+                status=TaskStatus.FAILED,
+                error=str(exc),
+                progress=f"Watcher: FAILED ({exc})",
+                finished_at=datetime.utcnow().isoformat(),
+            )
+            return f"Watcher: FAILED ({exc})"
+
     def _pull_filesystem() -> str:
         import pathlib
 
@@ -1692,12 +2315,16 @@ async def pull_all_sources(
     # ── Run all connectors concurrently ───────────────────
 
     def _run_all():
-        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="connector") as pool:
+        with ThreadPoolExecutor(max_workers=6, thread_name_prefix="connector") as pool:
             futures: Dict[str, Future] = {
                 "feedly": pool.submit(_pull_feedly),
                 "opencti": pool.submit(_pull_opencti),
+                "rss": pool.submit(_pull_rss),
+                "gvm": pool.submit(_pull_gvm),
+                "watcher": pool.submit(_pull_watcher),
                 "filesystem": pool.submit(_pull_filesystem),
             }
+            total_connectors = len(futures)
 
             # Update parent task as connectors finish
             summaries: List[str] = []
@@ -1714,7 +2341,7 @@ async def pull_all_sources(
                 done = sum(1 for f in futures.values() if f.done())
                 task_manager.update(
                     task.id,
-                    progress=f"{done}/3 connectors done",
+                    progress=f"{done}/{total_connectors} connectors done",
                 )
 
             task_manager.update(

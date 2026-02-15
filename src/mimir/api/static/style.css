@@ -1792,3 +1792,107 @@ main { display: flex; flex: 1; overflow: hidden; }
   margin-top: 2px;
   opacity: 0.8;
 }
+
+/* ── Path Finder ──────────────────────── */
+.path-section {
+  border-top: 1px solid rgba(0,0,0,0.06);
+  padding-top: 10px;
+}
+.path-suggestions {
+  position: relative;
+  z-index: 100;
+  display: none;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid rgba(0,0,0,0.12);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.10);
+  margin-top: 2px;
+}
+.path-suggestion-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: background 0.12s;
+}
+.path-suggestion-item:hover {
+  background: rgba(37,99,235,0.08);
+}
+.path-sug-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.path-sug-type {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.path-no-match {
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.path-result {
+  margin-top: 10px;
+}
+.path-summary {
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: var(--ink);
+}
+.path-summary em {
+  font-style: normal;
+  font-weight: 600;
+}
+.path-no-result {
+  color: var(--danger, #dc2626);
+  font-size: 13px;
+}
+.path-card {
+  background: rgba(255,255,255,0.7);
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.path-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 1px 6px rgba(37,99,235,0.12);
+}
+.path-card-header {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.path-hops {
+  font-weight: 400;
+  color: var(--muted);
+}
+.path-chain {
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+.path-node {
+  display: inline;
+  font-weight: 500;
+  color: var(--accent);
+}
+.path-edge {
+  display: inline;
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+}
+.path-arrow {
+  color: #9ca3af;
+  font-size: 11px;
+}

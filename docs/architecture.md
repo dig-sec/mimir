@@ -74,7 +74,7 @@ Elasticsearch-backed graph with full provenance tracking.
 
 ## Process Architecture
 
-Mimir runs as **six independent processes**, all built from the same
+Mimir runs as **nine independent processes**, all built from the same
 Docker image with different `command` overrides:
 
 | Service | Module | Purpose |
@@ -83,6 +83,9 @@ Docker image with different `command` overrides:
 | **llm-worker** | `mimir.worker.llm_worker` | Consumes run queue, processes text through LLM |
 | **feedly-worker** | `mimir.worker.feedly_worker` | Periodic Feedly article sync from Elasticsearch |
 | **opencti-worker** | `mimir.worker.opencti_worker` | Periodic entity/relation sync from OpenCTI |
+| **rss-worker** | `mimir.worker.rss_worker` | Periodic public RSS/Atom threat feed sync |
+| **gvm-worker** | `mimir.worker.gvm_worker` | Periodic GVM/OpenVAS vulnerability scan sync |
+| **watcher-worker** | `mimir.worker.watcher_worker` | Periodic Watcher threat-intelligence sync |
 | **elastic-worker** | `mimir.worker.elastic_worker` | Periodic document pull from ES source indices |
 | **backfill** | `mimir.backfill` | One-shot historical data backfill (on-demand) |
 
@@ -179,6 +182,9 @@ src/mimir/
     ├── llm_worker.py      # LLM extraction worker (concurrent queue consumer)
     ├── feedly_worker.py   # Feedly connector worker (periodic sync)
     ├── opencti_worker.py  # OpenCTI connector worker (periodic sync)
+    ├── rss_worker.py      # Public RSS/Atom feed worker (periodic sync)
+    ├── gvm_worker.py      # GVM/OpenVAS worker (periodic vulnerability sync)
+    ├── watcher_worker.py  # Watcher worker (periodic threat-intel sync)
     └── elastic_worker.py  # Elasticsearch source worker (periodic sync)
 ```
 
@@ -353,6 +359,9 @@ The extraction pipeline in `pipeline/runner.py`:
 |--------|------|-------------|
 | POST | `/api/feedly/pull` | Manual Feedly sync |
 | POST | `/api/opencti/pull` | Manual OpenCTI sync |
+| POST | `/api/rss/pull` | Manual public RSS/Atom feed sync |
+| POST | `/api/gvm/pull` | Manual GVM/OpenVAS sync |
+| POST | `/api/watcher/pull` | Manual Watcher sync |
 | POST | `/api/elasticsearch/pull` | Manual Elasticsearch sync |
 | POST | `/api/sources/pull-all` | Trigger all sources |
 | POST | `/api/backfill` | Start historical backfill |
@@ -468,6 +477,34 @@ All configuration is via environment variables, read at startup by the
 | `OPENCTI_TOKEN` | _(empty)_ | OpenCTI API token |
 | `OPENCTI_WORKER_INTERVAL_MINUTES` | `30` | Sync interval |
 
+### Public RSS Feed Worker
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RSS_WORKER_ENABLED` | `0` | Enable public RSS/Atom connector worker |
+| `RSS_WORKER_INTERVAL_MINUTES` | `30` | Sync interval |
+| `RSS_WORKER_FEEDS` | `https://www.cisa.gov/cybersecurity-advisories/all.xml` | Comma-separated feed URLs |
+| `RSS_WORKER_LOOKBACK_HOURS` | `168` | How far back to keep entries |
+
+### GVM Worker
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GVM_WORKER_ENABLED` | `0` | Enable GVM/OpenVAS worker |
+| `GVM_WORKER_INTERVAL_MINUTES` | `30` | Sync interval |
+| `GVM_WORKER_LOOKBACK_MINUTES` | `180` | Time overlap between cycles |
+| `GVM_CONNECTION_TYPE` | `unix` | GVM connection mode (`unix` or `tls`) |
+| `GVM_MAX_RESULTS` | `500` | Max findings per cycle |
+| `GVM_MIN_QOD` | `30` | Minimum QoD score to ingest |
+
+### Watcher Worker
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WATCHER_WORKER_ENABLED` | `0` | Enable Watcher worker |
+| `WATCHER_WORKER_INTERVAL_MINUTES` | `30` | Sync interval |
+| `WATCHER_WORKER_LOOKBACK_MINUTES` | `180` | Time overlap between cycles |
+| `WATCHER_BASE_URL` | `http://127.0.0.1:9002` | Watcher API base URL |
+| `WATCHER_PAGE_SIZE` | `200` | Page size for Watcher API pagination |
+| `WATCHER_PULL_*` | `1` | Module toggles for trendy words, leaks, twisted DNS, site monitoring |
+
 ### Elasticsearch Source Worker
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -513,6 +550,9 @@ docker compose run --rm backfill
 # View logs for a specific worker
 docker compose logs -f llm-worker
 docker compose logs -f feedly-worker
+docker compose logs -f rss-worker
+docker compose logs -f gvm-worker
+docker compose logs -f watcher-worker
 ```
 
 ### Local Development
@@ -528,6 +568,9 @@ uvicorn mimir.api.app:app --reload --port 8000
 python -m mimir.worker.llm_worker
 python -m mimir.worker.feedly_worker
 python -m mimir.worker.opencti_worker
+python -m mimir.worker.rss_worker
+python -m mimir.worker.gvm_worker
+python -m mimir.worker.watcher_worker
 python -m mimir.worker.elastic_worker
 ```
 

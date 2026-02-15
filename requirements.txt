@@ -7,3 +7,4 @@ python-multipart>=0.0.6
 pymupdf>=1.24
 elasticsearch>=8.13
 mcp[cli]>=1.0
+python-gvm>=24.8.0

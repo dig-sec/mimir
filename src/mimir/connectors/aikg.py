@@ -54,6 +54,29 @@ _VALID_ENTITY_TYPES = frozenset(
         "service",
         "credential",
         "artifact",
+        # Attack-surface / vulnerability-management types (GVM / Redamon-inspired)
+        "domain",
+        "subdomain",
+        "ip_address",
+        "port",
+        "base_url",
+        "endpoint",
+        "parameter",
+        "technology",
+        "header",
+        "certificate",
+        "dns_record",
+        "cve",
+        "mitre_data",
+        "capec",
+        "exploit",
+        # Watcher threat-intelligence types
+        "trendy_word",
+        "data_leak_alert",
+        "data_leak_keyword",
+        "twisted_domain",
+        "monitored_domain",
+        "monitored_site",
     }
 )
 

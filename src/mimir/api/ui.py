@@ -190,7 +190,56 @@ def render_root_ui(root_path: str = "", api_base_url: str = "", ollama_model: st
           </div>
         </div>
 
-
+        <!-- == PATH FINDER SECTION == -->
+        <div class="sidebar-section path-section" id="pathSection">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <label style="margin:0;font-weight:600;font-size:13px;cursor:pointer" id="pathToggle">&#9654; Path Finder</label>
+          </div>
+          <div id="pathContent" style="display:none">
+            <div class="controls">
+              <div class="ctrl-group">
+                <label>Source entity</label>
+                <input type="text" id="pathSourceInput" placeholder="Search source..." autocomplete="off" />
+                <input type="hidden" id="pathSourceId" />
+                <div class="path-suggestions" id="pathSourceSuggestions"></div>
+              </div>
+              <div class="ctrl-group">
+                <label>Target entity</label>
+                <input type="text" id="pathTargetInput" placeholder="Search target..." autocomplete="off" />
+                <input type="hidden" id="pathTargetId" />
+                <div class="path-suggestions" id="pathTargetSuggestions"></div>
+              </div>
+            </div>
+            <div class="controls">
+              <div class="ctrl-group">
+                <label>Algorithm</label>
+                <select id="pathAlgorithm">
+                  <option value="shortest" selected>Shortest path</option>
+                  <option value="all">All paths</option>
+                  <option value="longest">Longest path</option>
+                </select>
+              </div>
+              <div class="ctrl-group">
+                <label>Max depth</label>
+                <input type="number" id="pathMaxDepth" value="6" min="1" max="10" />
+              </div>
+            </div>
+            <div class="controls">
+              <div class="ctrl-group">
+                <label>Min confidence</label>
+                <input type="range" id="pathConfInput" value="0.0" min="0" max="1" step="0.05" />
+                <span class="range-val" id="pathConfVal">0.0</span>
+              </div>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-primary" id="findPathBtn" style="flex:1">Find Path</button>
+            </div>
+            <div class="path-result" id="pathResult" style="display:none">
+              <div class="path-summary" id="pathSummary"></div>
+              <div class="path-list" id="pathList"></div>
+            </div>
+          </div>
+        </div>
 
         <!-- entity list -->
         <div class="scroll-list" id="entityList">

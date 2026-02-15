@@ -100,6 +100,35 @@ Environment variables:
 - `CTI_ROLLUP_LOOKBACK_DAYS` (default: `365`)
 - `CTI_DECAY_HALF_LIFE_DAYS` (default: `14`)
 - `CTI_LEVEL_THRESHOLDS` (default: `0.2,0.4,0.6,0.8`)
+- `CTI_SOURCE_CONFIDENCE_RULES` (default: `opencti=0.90,malware=0.88,gvm=0.88,watcher=0.80,feedly=0.78,elasticsearch=0.72,stix=0.75,upload=0.55,file=0.50,unknown=0.45`)
+- `RSS_WORKER_ENABLED` (default: `0`)
+- `RSS_WORKER_INTERVAL_MINUTES` (default: `SYNC_INTERVAL_MINUTES`, then `30`)
+- `RSS_WORKER_FEEDS` (default: `https://www.cisa.gov/cybersecurity-advisories/all.xml`, comma-separated)
+- `RSS_WORKER_LOOKBACK_HOURS` (default: `168`)
+- `RSS_WORKER_MAX_ITEMS_PER_FEED` (default: `200`)
+- `RSS_WORKER_MIN_TEXT_CHARS` (default: `80`)
+- `RSS_WORKER_TIMEOUT_SECONDS` (default: `20`)
+- `GVM_WORKER_ENABLED` (default: `0`)
+- `GVM_WORKER_INTERVAL_MINUTES` (default: `SYNC_INTERVAL_MINUTES`, then `30`)
+- `GVM_WORKER_LOOKBACK_MINUTES` (default: `180`)
+- `GVM_CONNECTION_TYPE` (default: `unix`; supported: `unix`, `tls`)
+- `GVM_SOCKET_PATH` (default: `/run/gvmd/gvmd.sock`)
+- `GVM_HOST` / `GVM_PORT` (defaults: `127.0.0.1` / `9390`, for TLS mode)
+- `GVM_USERNAME` / `GVM_PASSWORD` (default: `admin` / `admin`)
+- `GVM_MAX_RESULTS` (default: `500`)
+- `GVM_MIN_QOD` (default: `30`)
+- `GVM_CA_CERT` (default: empty; optional CA bundle path for TLS mode)
+- `WATCHER_WORKER_ENABLED` (default: `0`)
+- `WATCHER_WORKER_INTERVAL_MINUTES` (default: `SYNC_INTERVAL_MINUTES`, then `30`)
+- `WATCHER_WORKER_LOOKBACK_MINUTES` (default: `180`)
+- `WATCHER_BASE_URL` (default: `http://127.0.0.1:9002`)
+- `WATCHER_API_TOKEN` (default: empty)
+- `WATCHER_VERIFY_TLS` (default: `1`)
+- `WATCHER_TIMEOUT_SECONDS` (default: `30`)
+- `WATCHER_PAGE_SIZE` (default: `200`)
+- `WATCHER_PULL_TRENDY_WORDS` / `WATCHER_PULL_DATA_LEAKS` / `WATCHER_PULL_DNS_TWISTED` / `WATCHER_PULL_SITE_MONITORING` (defaults: `1`)
+- `WATCHER_MIN_TRENDY_SCORE` (default: `0.0`)
+- `WATCHER_MIN_TRENDY_OCCURRENCES` (default: `1`)
 
 Inference (when enabled) currently applies a simple transitive rule for `is_a` relations within a chunk.
 
@@ -131,6 +160,36 @@ To override indices and window per run:
 
 ```bash
 curl -X POST "http://localhost:8000/api/elasticsearch/pull?indices=feedly_news&max_per_index=1000&lookback_minutes=120"
+```
+
+### Public RSS feed connector
+
+Pull public RSS/Atom feeds and queue unseen entries (no API key/license required):
+
+```bash
+curl -X POST "http://localhost:8000/api/rss/pull"
+```
+
+Override feeds and limits per run:
+
+```bash
+curl -X POST "http://localhost:8000/api/rss/pull?feeds=https://www.cisa.gov/cybersecurity-advisories/all.xml&lookback_hours=72&max_items_per_feed=100"
+```
+
+### GVM/OpenVAS connector
+
+Pull structured vulnerability findings from GVM/OpenVAS:
+
+```bash
+curl -X POST "http://localhost:8000/api/gvm/pull?lookback_minutes=180&max_results=500"
+```
+
+### Watcher connector
+
+Pull structured threat-intelligence records (trendy words, leaks, twisted domains, monitored sites):
+
+```bash
+curl -X POST "http://localhost:8000/api/watcher/pull?lookback_minutes=180"
 ```
 
 ## Temporal Analysis

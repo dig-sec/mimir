@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import List
+from typing import Dict, List
 
 
 def _env_bool(name: str, default: str = "0") -> bool:
@@ -56,6 +56,13 @@ class Settings:
     cti_rollup_lookback_days: int = int(os.getenv("CTI_ROLLUP_LOOKBACK_DAYS", "365"))
     cti_decay_half_life_days: int = int(os.getenv("CTI_DECAY_HALF_LIFE_DAYS", "14"))
     cti_level_thresholds: str = os.getenv("CTI_LEVEL_THRESHOLDS", "0.2,0.4,0.6,0.8")
+    cti_source_confidence_rules: str = os.getenv(
+        "CTI_SOURCE_CONFIDENCE_RULES",
+        (
+            "opencti=0.90,malware=0.88,gvm=0.88,watcher=0.80,feedly=0.78,elasticsearch=0.72,"
+            "stix=0.75,upload=0.55,file=0.50,unknown=0.45"
+        ),
+    )
     opencti_url: str = os.getenv("OPENCTI_URL", "")
     opencti_token: str = os.getenv("OPENCTI_TOKEN", "")
     elastic_connector_enabled: bool = _env_bool(
@@ -158,6 +165,28 @@ class Settings:
         )
     )
 
+    # RSS threat feed worker (public/no-license feeds)
+    rss_worker_enabled: bool = _env_bool("RSS_WORKER_ENABLED", "0")
+    rss_worker_interval_minutes: int = int(
+        os.getenv(
+            "RSS_WORKER_INTERVAL_MINUTES", os.getenv("SYNC_INTERVAL_MINUTES", "30")
+        )
+    )
+    rss_worker_feeds: str = os.getenv(
+        "RSS_WORKER_FEEDS",
+        "https://www.cisa.gov/cybersecurity-advisories/all.xml",
+    )
+    rss_worker_lookback_hours: int = int(os.getenv("RSS_WORKER_LOOKBACK_HOURS", "168"))
+    rss_worker_max_items_per_feed: int = int(
+        os.getenv("RSS_WORKER_MAX_ITEMS_PER_FEED", "200")
+    )
+    rss_worker_min_text_chars: int = int(
+        os.getenv("RSS_WORKER_MIN_TEXT_CHARS", "80")
+    )
+    rss_worker_timeout_seconds: float = float(
+        os.getenv("RSS_WORKER_TIMEOUT_SECONDS", "20")
+    )
+
     # Elasticsearch source worker
     elastic_worker_interval_minutes: int = int(
         os.getenv(
@@ -184,6 +213,58 @@ class Settings:
     )
     malware_worker_max_per_index: int = int(
         os.getenv("MALWARE_WORKER_MAX_PER_INDEX", "500")
+    )
+
+    # GVM (Greenbone Vulnerability Management) connector
+    gvm_worker_enabled: bool = _env_bool("GVM_WORKER_ENABLED", "0")
+    gvm_worker_interval_minutes: int = int(
+        os.getenv(
+            "GVM_WORKER_INTERVAL_MINUTES",
+            os.getenv("SYNC_INTERVAL_MINUTES", "30"),
+        )
+    )
+    gvm_worker_lookback_minutes: int = int(
+        os.getenv("GVM_WORKER_LOOKBACK_MINUTES", "180")
+    )
+    gvm_connection_type: str = os.getenv("GVM_CONNECTION_TYPE", "unix")
+    gvm_socket_path: str = os.getenv("GVM_SOCKET_PATH", "/run/gvmd/gvmd.sock")
+    gvm_host: str = os.getenv("GVM_HOST", "127.0.0.1")
+    gvm_port: int = int(os.getenv("GVM_PORT", "9390"))
+    gvm_username: str = os.getenv("GVM_USERNAME", "admin")
+    gvm_password: str = os.getenv("GVM_PASSWORD", "admin")
+    gvm_max_results: int = int(os.getenv("GVM_MAX_RESULTS", "500"))
+    gvm_min_qod: int = int(os.getenv("GVM_MIN_QOD", "30"))
+    gvm_ca_cert: str = os.getenv("GVM_CA_CERT", "")
+
+    # Watcher (Thales CERT threat intelligence platform)
+    watcher_worker_enabled: bool = _env_bool("WATCHER_WORKER_ENABLED", "0")
+    watcher_worker_interval_minutes: int = int(
+        os.getenv(
+            "WATCHER_WORKER_INTERVAL_MINUTES",
+            os.getenv("SYNC_INTERVAL_MINUTES", "30"),
+        )
+    )
+    watcher_worker_lookback_minutes: int = int(
+        os.getenv("WATCHER_WORKER_LOOKBACK_MINUTES", "180")
+    )
+    watcher_base_url: str = os.getenv("WATCHER_BASE_URL", "http://127.0.0.1:9002")
+    watcher_api_token: str = os.getenv("WATCHER_API_TOKEN", "")
+    watcher_verify_tls: bool = _env_bool("WATCHER_VERIFY_TLS", "1")
+    watcher_timeout_seconds: float = float(
+        os.getenv("WATCHER_TIMEOUT_SECONDS", "30")
+    )
+    watcher_page_size: int = int(os.getenv("WATCHER_PAGE_SIZE", "200"))
+    watcher_pull_trendy_words: bool = _env_bool("WATCHER_PULL_TRENDY_WORDS", "1")
+    watcher_pull_data_leaks: bool = _env_bool("WATCHER_PULL_DATA_LEAKS", "1")
+    watcher_pull_dns_twisted: bool = _env_bool("WATCHER_PULL_DNS_TWISTED", "1")
+    watcher_pull_site_monitoring: bool = _env_bool(
+        "WATCHER_PULL_SITE_MONITORING", "1"
+    )
+    watcher_min_trendy_score: float = float(
+        os.getenv("WATCHER_MIN_TRENDY_SCORE", "0.0")
+    )
+    watcher_min_trendy_occurrences: int = int(
+        os.getenv("WATCHER_MIN_TRENDY_OCCURRENCES", "1")
     )
 
     # AIKG JSON import (subject-predicate-object arrays)
@@ -231,6 +312,14 @@ class Settings:
             idx.strip()
             for idx in self.malware_worker_indices.split(",")
             if idx.strip()
+        ]
+
+    @property
+    def rss_worker_feeds_list(self) -> List[str]:
+        return [
+            feed.strip()
+            for feed in self.rss_worker_feeds.split(",")
+            if feed.strip()
         ]
 
     @property
@@ -307,6 +396,42 @@ class Settings:
             return out[:4]
         return [0.2, 0.4, 0.6, 0.8]
 
+    @property
+    def cti_source_confidence_rules_map(self) -> Dict[str, float]:
+        default_rules: Dict[str, float] = {
+            "opencti": 0.90,
+            "malware": 0.88,
+            "gvm": 0.88,
+            "watcher": 0.80,
+            "feedly": 0.78,
+            "elasticsearch": 0.72,
+            "stix": 0.75,
+            "upload": 0.55,
+            "file": 0.50,
+            "unknown": 0.45,
+        }
+        parsed_rules: Dict[str, float] = {}
+        for token in self.cti_source_confidence_rules.split(","):
+            token = token.strip()
+            if not token or "=" not in token:
+                continue
+            key, value = token.split("=", 1)
+            key = key.strip().lower()
+            if not key:
+                continue
+            try:
+                score = float(value.strip())
+            except ValueError:
+                continue
+            parsed_rules[key] = max(0.0, min(score, 1.0))
+        if not parsed_rules:
+            return dict(default_rules)
+        merged_rules = dict(default_rules)
+        merged_rules.update(parsed_rules)
+        if "unknown" not in merged_rules:
+            merged_rules["unknown"] = default_rules["unknown"]
+        return merged_rules
+
 
 def get_settings() -> Settings:
     return Settings()
@@ -366,6 +491,101 @@ def validate_settings(settings: Settings) -> None:
         raise ValueError(
             "SEARCH_QUERY_MAX_LENGTH must be >= 8, "
             f"got {settings.search_query_max_length}"
+        )
+    if settings.rss_worker_interval_minutes < 0:
+        raise ValueError(
+            "RSS_WORKER_INTERVAL_MINUTES must be >= 0, "
+            f"got {settings.rss_worker_interval_minutes}"
+        )
+    if settings.rss_worker_lookback_hours < 0:
+        raise ValueError(
+            "RSS_WORKER_LOOKBACK_HOURS must be >= 0, "
+            f"got {settings.rss_worker_lookback_hours}"
+        )
+    if settings.rss_worker_max_items_per_feed < 1:
+        raise ValueError(
+            "RSS_WORKER_MAX_ITEMS_PER_FEED must be >= 1, "
+            f"got {settings.rss_worker_max_items_per_feed}"
+        )
+    if settings.rss_worker_min_text_chars < 1:
+        raise ValueError(
+            "RSS_WORKER_MIN_TEXT_CHARS must be >= 1, "
+            f"got {settings.rss_worker_min_text_chars}"
+        )
+    if settings.rss_worker_timeout_seconds <= 0:
+        raise ValueError(
+            "RSS_WORKER_TIMEOUT_SECONDS must be > 0, "
+            f"got {settings.rss_worker_timeout_seconds}"
+        )
+    if settings.gvm_worker_interval_minutes < 0:
+        raise ValueError(
+            "GVM_WORKER_INTERVAL_MINUTES must be >= 0, "
+            f"got {settings.gvm_worker_interval_minutes}"
+        )
+    if settings.gvm_worker_lookback_minutes < 0:
+        raise ValueError(
+            "GVM_WORKER_LOOKBACK_MINUTES must be >= 0, "
+            f"got {settings.gvm_worker_lookback_minutes}"
+        )
+    if settings.gvm_max_results < 1:
+        raise ValueError(
+            "GVM_MAX_RESULTS must be >= 1, "
+            f"got {settings.gvm_max_results}"
+        )
+    if not (0 <= settings.gvm_min_qod <= 100):
+        raise ValueError(
+            "GVM_MIN_QOD must be between 0 and 100, "
+            f"got {settings.gvm_min_qod}"
+        )
+    gvm_conn_type = settings.gvm_connection_type.strip().lower()
+    if gvm_conn_type not in {"unix", "tls"}:
+        raise ValueError(
+            "GVM_CONNECTION_TYPE must be one of {'unix', 'tls'}, "
+            f"got {settings.gvm_connection_type!r}"
+        )
+    if gvm_conn_type == "unix" and not settings.gvm_socket_path.strip():
+        raise ValueError(
+            "GVM_SOCKET_PATH must be set when GVM_CONNECTION_TYPE='unix'"
+        )
+    if gvm_conn_type == "tls":
+        if not settings.gvm_host.strip():
+            raise ValueError(
+                "GVM_HOST must be set when GVM_CONNECTION_TYPE='tls'"
+            )
+        if settings.gvm_port <= 0 or settings.gvm_port > 65535:
+            raise ValueError(
+                "GVM_PORT must be between 1 and 65535, "
+                f"got {settings.gvm_port}"
+            )
+    if settings.watcher_worker_interval_minutes < 0:
+        raise ValueError(
+            "WATCHER_WORKER_INTERVAL_MINUTES must be >= 0, "
+            f"got {settings.watcher_worker_interval_minutes}"
+        )
+    if settings.watcher_worker_lookback_minutes < 0:
+        raise ValueError(
+            "WATCHER_WORKER_LOOKBACK_MINUTES must be >= 0, "
+            f"got {settings.watcher_worker_lookback_minutes}"
+        )
+    if settings.watcher_timeout_seconds <= 0:
+        raise ValueError(
+            "WATCHER_TIMEOUT_SECONDS must be > 0, "
+            f"got {settings.watcher_timeout_seconds}"
+        )
+    if settings.watcher_page_size < 1:
+        raise ValueError(
+            "WATCHER_PAGE_SIZE must be >= 1, "
+            f"got {settings.watcher_page_size}"
+        )
+    if settings.watcher_min_trendy_score < 0:
+        raise ValueError(
+            "WATCHER_MIN_TRENDY_SCORE must be >= 0, "
+            f"got {settings.watcher_min_trendy_score}"
+        )
+    if settings.watcher_min_trendy_occurrences < 1:
+        raise ValueError(
+            "WATCHER_MIN_TRENDY_OCCURRENCES must be >= 1, "
+            f"got {settings.watcher_min_trendy_occurrences}"
         )
     if not (0.0 <= settings.aikg_import_min_inferred_confidence <= 1.0):
         raise ValueError(

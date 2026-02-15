@@ -116,6 +116,23 @@ class RunStatusResponse(BaseModel):
     run: ExtractionRun
 
 
+class GraphPath(BaseModel):
+    """An ordered path through the knowledge graph."""
+
+    nodes: List[SubgraphNode]
+    edges: List[SubgraphEdge]
+    length: int = 0  # number of hops (edges)
+
+
+class PathResult(BaseModel):
+    """Result of a path-finding query between two entities."""
+
+    source: SubgraphNode
+    target: SubgraphNode
+    paths: List[GraphPath]
+    algorithm: str  # "shortest", "all", "longest"
+
+
 class ExplainEntityRelation(BaseModel):
     relation: Relation
     provenance: List[Provenance]

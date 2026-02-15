@@ -710,7 +710,7 @@ function clearGraph() {
 }
 
 /* ── render ────────────────────────────── */
-function renderGraph(data) {
+export function renderGraph(data) {
   clearGraph();
   if (!data.nodes.length) { toast('No data to display', 'error'); return; }
 

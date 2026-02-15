@@ -174,6 +174,12 @@ async function refreshStatus() {
       ? workers.map(w => {
         const d = w.details || {};
         const detailParts = [];
+        if (d.results_processed != null) detailParts.push(`${d.results_processed} results`);
+        if (d.hosts_seen != null) detailParts.push(`${d.hosts_seen} hosts`);
+        if (d.trendy_words != null) detailParts.push(`${d.trendy_words} trendy`);
+        if (d.data_leaks != null) detailParts.push(`${d.data_leaks} leaks`);
+        if (d.dns_twisted != null) detailParts.push(`${d.dns_twisted} twisted`);
+        if (d.sites != null) detailParts.push(`${d.sites} sites`);
         if (d.samples_processed != null) detailParts.push(`${d.samples_processed} samples`);
         if (d.entities_created != null) detailParts.push(`${d.entities_created} entities`);
         if (d.relations_created != null) detailParts.push(`${d.relations_created} rels`);

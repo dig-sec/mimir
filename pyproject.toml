@@ -15,11 +15,14 @@ dependencies = [
   "pymupdf>=1.24",
   "elasticsearch>=8.13",
   "mcp[cli]>=1.0",
+  "python-gvm>=24.8.0",
 ]
 
 [project.scripts]
 mimir-mcp = "mimir.mcp.server:main"
 mimir-malware-worker = "mimir.worker.malware_worker:main"
+mimir-gvm-worker = "mimir.worker.gvm_worker:main"
+mimir-watcher-worker = "mimir.worker.watcher_worker:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-cov>=5.0"]

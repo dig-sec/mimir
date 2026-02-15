@@ -234,6 +234,187 @@ def explain_relation(relation_id: str) -> str:
     )
 
 
+# ── path-finding tools ────────────────────────────────────────────────
+
+
+def _path_dict(path: Any) -> dict:
+    return {
+        "nodes": [{"id": n.id, "name": n.name, "type": n.type} for n in path.nodes],
+        "edges": [
+            {
+                "id": e.id,
+                "subject_id": e.subject_id,
+                "predicate": e.predicate,
+                "object_id": e.object_id,
+                "confidence": e.confidence,
+            }
+            for e in path.edges
+        ],
+        "length": path.length,
+    }
+
+
+def _resolve_seed(entity_name: str | None, entity_id: str | None) -> str | None:
+    """Resolve an entity by name or ID, returning the entity ID or None."""
+    if entity_id:
+        if graph_store.get_entity(entity_id):
+            return entity_id
+        return None
+    if entity_name:
+        matches = graph_store.search_entities(entity_name)
+        if matches:
+            return matches[0].id
+    return None
+
+
+@mcp.tool()
+def find_shortest_path(
+    source_name: str | None = None,
+    source_id: str | None = None,
+    target_name: str | None = None,
+    target_id: str | None = None,
+    min_confidence: float = 0.0,
+    max_depth: int = 6,
+) -> str:
+    """Find the shortest path between two entities in the knowledge graph.
+
+    Provide *either* name (fuzzy search) or id for each endpoint.
+
+    Args:
+        source_name: Search for the source entity by name.
+        source_id: Use an exact source entity ID.
+        target_name: Search for the target entity by name.
+        target_id: Use an exact target entity ID.
+        min_confidence: Minimum relation confidence (0.0-1.0).
+        max_depth: Maximum traversal depth / hops (1-10, default 6).
+    Returns:
+        JSON with source, target, the shortest path (nodes + edges), and hop count.
+    """
+    src = _resolve_seed(source_name, source_id)
+    tgt = _resolve_seed(target_name, target_id)
+    if not src:
+        return _fmt({"error": "Source entity not found"})
+    if not tgt:
+        return _fmt({"error": "Target entity not found"})
+
+    max_depth = max(1, min(max_depth, 10))
+    result = graph_store.find_shortest_path(
+        source_id=src,
+        target_id=tgt,
+        min_confidence=min_confidence,
+        max_depth=max_depth,
+    )
+    return _fmt(
+        {
+            "source": {"id": result.source.id, "name": result.source.name},
+            "target": {"id": result.target.id, "name": result.target.name},
+            "algorithm": result.algorithm,
+            "paths_found": len(result.paths),
+            "paths": [_path_dict(p) for p in result.paths],
+        }
+    )
+
+
+@mcp.tool()
+def find_all_paths(
+    source_name: str | None = None,
+    source_id: str | None = None,
+    target_name: str | None = None,
+    target_id: str | None = None,
+    min_confidence: float = 0.0,
+    max_depth: int = 4,
+    max_paths: int = 20,
+) -> str:
+    """Find all simple paths between two entities in the knowledge graph.
+
+    Provide *either* name (fuzzy search) or id for each endpoint.
+
+    Args:
+        source_name: Search for the source entity by name.
+        source_id: Use an exact source entity ID.
+        target_name: Search for the target entity by name.
+        target_id: Use an exact target entity ID.
+        min_confidence: Minimum relation confidence (0.0-1.0).
+        max_depth: Maximum path length in hops (1-8, default 4).
+        max_paths: Maximum number of paths to return (1-100, default 20).
+    Returns:
+        JSON with all discovered paths sorted by length.
+    """
+    src = _resolve_seed(source_name, source_id)
+    tgt = _resolve_seed(target_name, target_id)
+    if not src:
+        return _fmt({"error": "Source entity not found"})
+    if not tgt:
+        return _fmt({"error": "Target entity not found"})
+
+    max_depth = max(1, min(max_depth, 8))
+    max_paths = max(1, min(max_paths, 100))
+    result = graph_store.find_all_paths(
+        source_id=src,
+        target_id=tgt,
+        min_confidence=min_confidence,
+        max_depth=max_depth,
+        max_paths=max_paths,
+    )
+    return _fmt(
+        {
+            "source": {"id": result.source.id, "name": result.source.name},
+            "target": {"id": result.target.id, "name": result.target.name},
+            "algorithm": result.algorithm,
+            "paths_found": len(result.paths),
+            "paths": [_path_dict(p) for p in result.paths],
+        }
+    )
+
+
+@mcp.tool()
+def find_longest_path(
+    source_name: str | None = None,
+    source_id: str | None = None,
+    target_name: str | None = None,
+    target_id: str | None = None,
+    min_confidence: float = 0.0,
+    max_depth: int = 6,
+) -> str:
+    """Find the longest simple path between two entities in the knowledge graph.
+
+    Provide *either* name (fuzzy search) or id for each endpoint.
+
+    Args:
+        source_name: Search for the source entity by name.
+        source_id: Use an exact source entity ID.
+        target_name: Search for the target entity by name.
+        target_id: Use an exact target entity ID.
+        min_confidence: Minimum relation confidence (0.0-1.0).
+        max_depth: Maximum traversal depth / hops (1-10, default 6).
+    Returns:
+        JSON with the longest path found between the two entities.
+    """
+    src = _resolve_seed(source_name, source_id)
+    tgt = _resolve_seed(target_name, target_id)
+    if not src:
+        return _fmt({"error": "Source entity not found"})
+    if not tgt:
+        return _fmt({"error": "Target entity not found"})
+
+    max_depth = max(1, min(max_depth, 10))
+    result = graph_store.find_longest_path(
+        source_id=src,
+        target_id=tgt,
+        min_confidence=min_confidence,
+        max_depth=max_depth,
+    )
+    return _fmt(
+        {
+            "source": {"id": result.source.id, "name": result.source.name},
+            "target": {"id": result.target.id, "name": result.target.name},
+            "algorithm": result.algorithm,
+            "paths_found": len(result.paths),
+            "paths": [_path_dict(p) for p in result.paths],
+        }
+    )
+
+
 @mcp.tool()
 def graph_stats() -> str:
     """Get high-level statistics about the Mimir knowledge-graph.

@@ -54,9 +54,20 @@ def _load_routes(monkeypatch, tmp_path: Path, **settings_overrides: Any):
         "opencti_url": "http://opencti.local",
         "opencti_token": "token",
         "opencti_worker_interval_minutes": 30,
+        "rss_worker_enabled": True,
+        "rss_worker_interval_minutes": 30,
+        "rss_worker_feeds": "https://www.cisa.gov/cybersecurity-advisories/all.xml",
         "malware_worker_enabled": True,
         "malware_worker_interval_minutes": 30,
         "malware_worker_indices": "mwdb-openrelik",
+        "gvm_worker_enabled": True,
+        "gvm_worker_interval_minutes": 30,
+        "gvm_connection_type": "unix",
+        "gvm_socket_path": "/run/gvmd/gvmd.sock",
+        "watcher_worker_enabled": True,
+        "watcher_worker_interval_minutes": 30,
+        "watcher_base_url": "http://watcher.local:9002",
+        "watcher_pull_trendy_words": True,
         "llm_worker_poll_seconds": 2,
     }
     settings_values.update(settings_overrides)
@@ -97,7 +108,9 @@ def _write_heartbeat(
     target.write_text(json.dumps(payload), encoding="utf-8")
 
 
-def test_worker_specs_include_malware_worker_when_configured(monkeypatch, tmp_path: Path):
+def test_worker_specs_include_connector_workers_when_configured(
+    monkeypatch, tmp_path: Path
+):
     routes = _load_routes(monkeypatch, tmp_path)
 
     specs = {spec["id"]: spec for spec in routes._worker_specs()}
@@ -106,6 +119,9 @@ def test_worker_specs_include_malware_worker_when_configured(monkeypatch, tmp_pa
     assert specs["opencti-worker"]["enabled"] is True
     assert specs["elastic-worker"]["enabled"] is True
     assert specs["malware-worker"]["enabled"] is True
+    assert specs["rss-worker"]["enabled"] is True
+    assert specs["gvm-worker"]["enabled"] is True
+    assert specs["watcher-worker"]["enabled"] is True
 
 
 def test_build_worker_status_marks_stale_and_counts_replicas(monkeypatch, tmp_path: Path):

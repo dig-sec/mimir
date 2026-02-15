@@ -19,7 +19,7 @@ from elasticsearch import (
 )
 from elasticsearch.helpers import bulk as es_bulk
 
-from ..lake import build_lake_metadata
+from ..lake import build_lake_metadata, infer_source
 from ..normalize import canonical_entity_key
 from ..schemas import (
     Chunk,
@@ -1865,6 +1865,16 @@ class ElasticMetricsStore(_ElasticBase, MetricsStore):
     }
     CTI_LEVEL_THRESHOLDS = (0.2, 0.4, 0.6, 0.8)
     CTI_ATTRIBUTION_STATES = ("known", "suspected", "possible", "unknown")
+    CTI_SOURCE_CONFIDENCE_DEFAULTS = {
+        "opencti": 0.90,
+        "malware": 0.88,
+        "feedly": 0.78,
+        "elasticsearch": 0.72,
+        "stix": 0.75,
+        "upload": 0.55,
+        "file": 0.50,
+        "unknown": 0.45,
+    }
 
     def __init__(
         self,
@@ -1874,10 +1884,14 @@ class ElasticMetricsStore(_ElasticBase, MetricsStore):
         index_prefix: str = "mimir",
         verify_certs: bool = True,
         cti_level_thresholds: Optional[List[float]] = None,
+        cti_source_confidence_rules: Optional[Dict[str, float]] = None,
     ) -> None:
         super().__init__(hosts, username, password, index_prefix, verify_certs)
         self.cti_level_thresholds = self._normalize_level_thresholds(
             cti_level_thresholds
+        )
+        self.cti_source_confidence_rules = self._normalize_source_confidence_rules(
+            cti_source_confidence_rules
         )
         self._ensure_indices()
 
@@ -1903,6 +1917,9 @@ class ElasticMetricsStore(_ElasticBase, MetricsStore):
                 "incoming_relation_count": {"type": "integer"},
                 "outgoing_relation_count": {"type": "integer"},
                 "evidence_count": {"type": "integer"},
+                "weighted_evidence_count": {"type": "float"},
+                "source_confidence_score": {"type": "float"},
+                "source_distribution": {"type": "object"},
                 "threat_domain_score": {"type": "float"},
                 "threat_actor_score": {"type": "float"},
                 "threat_level_score": {"type": "float"},
@@ -1997,6 +2014,34 @@ class ElasticMetricsStore(_ElasticBase, MetricsStore):
         if len(parsed) < 4:
             return cls.CTI_LEVEL_THRESHOLDS
         return (parsed[0], parsed[1], parsed[2], parsed[3])
+
+    @classmethod
+    def _normalize_source_confidence_rules(
+        cls,
+        values: Optional[Dict[str, float]],
+    ) -> Dict[str, float]:
+        normalized = dict(cls.CTI_SOURCE_CONFIDENCE_DEFAULTS)
+        if not values:
+            return normalized
+        for key, value in values.items():
+            normalized_key = str(key or "").strip().lower()
+            if not normalized_key:
+                continue
+            try:
+                score = float(value)
+            except (TypeError, ValueError):
+                continue
+            normalized[normalized_key] = max(0.0, min(score, 1.0))
+        if "unknown" not in normalized:
+            normalized["unknown"] = cls.CTI_SOURCE_CONFIDENCE_DEFAULTS["unknown"]
+        return normalized
+
+    def _source_confidence_for_uri(self, source_uri: Any) -> Tuple[str, float]:
+        source_key = infer_source(str(source_uri or "")).strip().lower() or "unknown"
+        score = self.cti_source_confidence_rules.get(source_key)
+        if score is None:
+            score = self.cti_source_confidence_rules.get("unknown", 0.45)
+        return source_key, self._clamp_score(score)
 
     def _score_to_level(self, score: float) -> int:
         score = self._clamp_score(score)
@@ -2466,11 +2511,20 @@ class ElasticMetricsStore(_ElasticBase, MetricsStore):
                             "relation_ids": set(),
                             "evidence_count": 0,
                             "predicates": Counter(),
+                            "source_counts": Counter(),
+                            "source_weight_sum": 0.0,
+                            "source_samples": 0,
                         }
                     data = buckets[key]
                     data["relation_ids"].add(relation_id)
                     data["evidence_count"] += 1
                     data["predicates"][relation["predicate"]] += 1
+                    source_key, source_score = self._source_confidence_for_uri(
+                        source.get("source_uri")
+                    )
+                    data["source_counts"][source_key] += 1
+                    data["source_weight_sum"] += source_score
+                    data["source_samples"] += 1
 
         docs_written = 0
         generated_at = now.isoformat()
@@ -2489,6 +2543,21 @@ class ElasticMetricsStore(_ElasticBase, MetricsStore):
                 {"predicate": pred, "count": count}
                 for pred, count in data["predicates"].most_common(10)
             ]
+            source_samples = int(data.get("source_samples", 0))
+            source_confidence_score = self._clamp_score(
+                float(data.get("source_weight_sum", 0.0)) / float(max(source_samples, 1))
+            )
+            weighted_evidence_count = (
+                float(data.get("source_weight_sum", 0.0))
+                if source_samples > 0
+                else float(data.get("evidence_count", 0))
+            )
+            source_distribution = [
+                {"source": str(source_name), "count": int(count)}
+                for source_name, count in data.get("source_counts", Counter()).most_common(
+                    10
+                )
+            ]
             doc_id = (
                 f"{self.METRIC_TYPE_DAILY_PIR_ENTITY}:"
                 f"{scope}:{bucket_day.date().isoformat()}:{entity_id}"
@@ -2506,6 +2575,9 @@ class ElasticMetricsStore(_ElasticBase, MetricsStore):
                     "entity_type": meta["type"],
                     "relation_count": len(data["relation_ids"]),
                     "evidence_count": int(data["evidence_count"]),
+                    "weighted_evidence_count": round(weighted_evidence_count, 4),
+                    "source_confidence_score": round(source_confidence_score, 4),
+                    "source_distribution": source_distribution,
                     "top_predicates": top_predicates,
                     "lookback_days": lookback_days,
                     "min_confidence": min_confidence,
@@ -2621,6 +2693,22 @@ class ElasticMetricsStore(_ElasticBase, MetricsStore):
 
             relation_count = max(int(source.get("relation_count", 0)), 0)
             evidence_count = max(int(source.get("evidence_count", 0)), 0)
+            weighted_evidence_count = max(
+                float(source.get("weighted_evidence_count", evidence_count)),
+                0.0,
+            )
+            source_confidence_score = self._clamp_score(
+                source.get(
+                    "source_confidence_score",
+                    self.cti_source_confidence_rules.get("unknown", 0.45),
+                )
+            )
+            source_distribution_raw = source.get("source_distribution") or []
+            source_distribution = (
+                source_distribution_raw
+                if isinstance(source_distribution_raw, list)
+                else []
+            )
             top_predicates_raw = source.get("top_predicates") or []
             top_predicates = (
                 top_predicates_raw if isinstance(top_predicates_raw, list) else []
@@ -2630,8 +2718,14 @@ class ElasticMetricsStore(_ElasticBase, MetricsStore):
                 (-math.log(2.0) * age_days) / float(decay_half_life_days)
             )
 
-            activity_signal_raw = min(
+            raw_activity_signal = min(
                 1.0, math.log1p(float(evidence_count)) / math.log1p(200.0)
+            )
+            weighted_activity_signal = min(
+                1.0, math.log1p(float(weighted_evidence_count)) / math.log1p(200.0)
+            )
+            activity_signal_raw = self._clamp_score(
+                (0.65 * weighted_activity_signal) + (0.35 * raw_activity_signal)
             )
             domain_signal_raw = min(
                 1.0, math.log1p(float(relation_count)) / math.log1p(80.0)
@@ -2651,8 +2745,9 @@ class ElasticMetricsStore(_ElasticBase, MetricsStore):
             )
             confidence_score = self._clamp_score(
                 max(min_confidence, 0.20)
-                + (0.45 * activity_signal)
+                + (0.35 * activity_signal)
                 + (0.20 * threat_domain_score)
+                + (0.25 * source_confidence_score)
             )
             source_reliability, information_credibility = self._confidence_to_admiralty(
                 confidence_score
@@ -2743,6 +2838,9 @@ class ElasticMetricsStore(_ElasticBase, MetricsStore):
                     "entity_ids": [entity_id],
                     "relation_count": relation_count,
                     "evidence_count": evidence_count,
+                    "weighted_evidence_count": round(weighted_evidence_count, 4),
+                    "source_confidence_score": round(source_confidence_score, 4),
+                    "source_distribution": source_distribution,
                     "threat_domain_score": threat_domain_score,
                     "threat_actor_score": threat_actor_score,
                     "threat_level_score": threat_level_score,
