@@ -175,6 +175,7 @@ def render_root_ui(root_path: str = "", api_base_url: str = "", ollama_model: st
           </div>
           <div class="btn-row">
             <button class="btn btn-primary" id="vizBtn" style="flex:1">Visualize</button>
+            <button class="btn btn-outline" id="addCurrentSearchBtn" title="Add to multi-search">+</button>
           </div>
           <div class="btn-row" id="exportRow" style="display:none;margin-top:6px">
             <div class="export-dropdown sidebar-export" id="exportDropdown" style="flex:1">
@@ -238,6 +239,20 @@ def render_root_ui(root_path: str = "", api_base_url: str = "", ollama_model: st
               <div class="path-summary" id="pathSummary"></div>
               <div class="path-list" id="pathList"></div>
             </div>
+          </div>
+        </div>
+
+        <!-- == MULTI-SEARCH SECTION == -->
+        <div class="sidebar-section multi-search-section" id="multiSearchPanel">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <label style="margin:0;font-weight:600;font-size:13px;cursor:pointer" id="multiSearchToggle">&#9654; Parallel Searches</label>
+            <button class="btn btn-outline btn-sm" id="mergeViewBtn" title="Merge all active searches">Merge Views</button>
+          </div>
+          <div id="multiSearchContent" style="display:none">
+            <div class="searches-list" id="searchesList">
+              <div class="empty-state" style="padding:10px 0"><p>No searches yet</p></div>
+            </div>
+            <span class="hint" style="margin-top:6px">Tip: Use "+" button above to add searches, then Merge Views</span>
           </div>
         </div>
 

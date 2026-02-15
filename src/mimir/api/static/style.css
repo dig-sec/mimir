@@ -1896,3 +1896,55 @@ main { display: flex; flex: 1; overflow: hidden; }
   color: #9ca3af;
   font-size: 11px;
 }
+
+/* ── Multi-Search ────────────────────────── */
+.multi-search-section {
+  border-top: 1px solid rgba(0,0,0,0.06);
+  padding-top: 10px;
+  margin-top: 10px;
+}
+
+.searches-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.search-card {
+  background: rgba(37,99,235,0.05);
+  border: 1px solid rgba(37,99,235,0.15);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.search-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+
+.search-label {
+  font-weight: 600;
+  color: var(--accent);
+  word-break: break-word;
+}
+
+.search-depth {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  margin-left: 4px;
+}
+
+.search-card-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.search-remove {
+  padding: 2px 6px;
+  font-size: 11px;
+}
