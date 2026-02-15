@@ -45,6 +45,18 @@ Run with coverage reporting:
 pytest --cov=src --cov-report=term-missing
 ```
 
+UI responsiveness + feature smoke tests (Playwright):
+
+```bash
+pip install -r requirements-dev.txt
+python -m playwright install chromium
+MIMIR_RUN_UI_TESTS=1 MIMIR_UI_BASE_URL=http://127.0.0.1:8000 pytest -m ui tests/ui -q
+```
+
+Notes:
+- UI tests are opt-in (`MIMIR_RUN_UI_TESTS=1`) and skipped by default.
+- Start the app first (for example `docker compose up -d`) before running UI tests.
+
 ## Configuration
 
 Environment variables:
